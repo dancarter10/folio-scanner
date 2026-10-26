@@ -264,8 +264,19 @@ svg.i.lg { width: 28px; height: 28px; }
 }
 .hero h2 { margin: 0 0 2px; font-size: 22px; font-weight: 600; line-height: 28px; text-wrap: balance; }
 .hero p { margin: 0 0 16px; color: var(--ink-2); line-height: 28px; font-size: 14.5px; }
-.hero .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hero .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.hero .actions .btn { padding: 0 12px; min-width: 0; }
 .hero .actions .btn.primary { grid-column: 1 / -1; min-height: 56px; font-size: 16.5px; border-radius: 16px; }
+@media (max-width: 400px) {
+  /* narrower phones: a slimmer notebook margin, and the buttons keep to their words */
+  .hero {
+    padding-left: 48px;
+    background-image:
+      linear-gradient(90deg, transparent 34px, color-mix(in srgb, var(--margin) 55%, transparent) 34px, color-mix(in srgb, var(--margin) 55%, transparent) 35.5px, transparent 35.5px),
+      repeating-linear-gradient(180deg, transparent 0 27px, var(--line) 27px 28px);
+  }
+  .hero .actions .btn small { display: none; }
+}
 .hero .install { margin-top: 12px; }
 .filters { padding: 0 var(--gutter-r) 6px var(--gutter-l); }
 .section-h {
@@ -443,7 +454,7 @@ svg.i.lg { width: 28px; height: 28px; }
 .sheet header h3 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
 .sheet .body { overflow-y: auto; padding: 4px 20px calc(var(--bottom) + 20px); display: grid; gap: 16px; overscroll-behavior: contain; }
 .group { display: grid; gap: 8px; }
-.group > label, .group > .lbl { font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+.group > label:not(.switch), .group > .lbl { font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
 .row { display: flex; gap: 10px; align-items: center; }
 .row.wrap { flex-wrap: wrap; }
 .seg { display: flex; padding: 3px; border-radius: 12px; background: var(--surface-2); gap: 3px; }
@@ -531,6 +542,12 @@ textarea.input { height: auto; min-height: 180px; padding: 12px 14px; line-heigh
 .camera .modes { display: flex; background: var(--cam-glass); backdrop-filter: blur(8px); border-radius: 999px; padding: 3px; }
 .camera .modes button { border: 0; background: transparent; color: var(--cam-ink); height: 38px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .camera .modes button[aria-pressed="true"] { background: var(--cam-ink); color: #0b0d12; }
+.camera .hd-chip {
+  border: 1.5px solid rgba(255, 255, 255, 0.85); background: var(--cam-glass); backdrop-filter: blur(8px);
+  color: var(--cam-ink); height: 28px; min-width: 40px; padding: 0 8px; border-radius: 8px;
+  font: 700 12px/1 var(--font); letter-spacing: 0.06em;
+}
+@media (max-width: 380px) { .camera .hd-chip { display: none; } }
 .camera .hint {
   position: absolute; left: 50%; top: calc(var(--top) + 76px); transform: translateX(-50%);
   background: var(--cam-glass); backdrop-filter: blur(8px);
@@ -614,6 +631,19 @@ textarea.input { height: auto; min-height: 180px; padding: 12px 14px; line-heigh
   .home .scroll > * { max-width: 1040px; margin-left: auto !important; margin-right: auto !important; }
   .home .hero { max-width: 640px; }
 }
+
+/* full-detail viewer */
+.zoomer { position: fixed; inset: 0; background: #0b0d12; z-index: 40; display: flex; flex-direction: column; }
+.zoom-stage { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: grab; }
+.zoom-img { position: absolute; left: 0; top: 0; transform-origin: 0 0; user-select: none; -webkit-user-drag: none; transition: opacity 0.2s; box-shadow: 0 2px 30px rgba(0, 0, 0, 0.5); background: #fff; }
+.zoom-bar {
+  display: flex; align-items: center; gap: 8px; padding: 10px var(--gutter-r) calc(var(--bottom) + 10px) var(--gutter-l);
+  background: rgba(11, 13, 18, 0.92); color: #e9edf5;
+}
+.zoom-bar .ibtn { color: #e9edf5; background: rgba(255, 255, 255, 0.1); border-radius: 50%; }
+.zoom-bar .ibtn.flip svg { transform: scaleX(-1); }
+.zoom-label { flex: 1; font-size: 13px; color: #aab3c5; text-align: center; }
+.sheet-wrap { cursor: zoom-in; }
 </style>
 </head>
 <body>
@@ -1051,7 +1081,11 @@ function FolioEngine() {
     // thresholds from the distribution of edge strengths
     let acc = 0, p80 = 255;
     for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= cnt * 0.8) { p80 = v; break; } }
-    const hi = Math.max(opts.live ? 9 : 8, p80), lo = Math.max(4, hi * 0.45);
+    // strong content (pictures, headings) must not push the threshold above faint page edges,
+    // e.g. a white page on a white desk where only a soft shadow marks the edge
+    const capHi = opts.capHi != null ? opts.capHi : (opts.live ? 14 : 11);
+    const hi = Math.max(opts.live ? 7 : 6, Math.min(p80, capHi)), lo = Math.max(3.2, hi * 0.45);
+    if (opts.debug) opts.debug.thr = { hi, lo, p80 };
     // hysteresis
     const edge = new Uint8Array(N), stack = new Int32Array(N);
     let sp = 0;
@@ -1089,12 +1123,29 @@ function FolioEngine() {
         accH[t * NR + rho] += dt === 0 ? 1 : 0.85;
       }
     }
+    // Smooth the accumulator a little so gently curved edges (book pages, curled sheets), whose votes
+    // spread over neighbouring angles and offsets, still form a peak. Centre weight 1.
+    const accS = new Float32Array(NT * NR);
+    {
+      const tmpR = new Float32Array(NT * NR);
+      for (let t = 0; t < NT; t++) {
+        const b = t * NR;
+        for (let rr = 2; rr < NR - 2; rr++) {
+          tmpR[b + rr] = accH[b + rr] + (accH[b + rr - 1] + accH[b + rr + 1]) * 0.667 + (accH[b + rr - 2] + accH[b + rr + 2]) * 0.333;
+        }
+      }
+      const at = (t, rr) => {
+        if (t < 0) { t += NT; rr = NR - 1 - rr; } else if (t >= NT) { t -= NT; rr = NR - 1 - rr; }
+        return tmpR[t * NR + rr];
+      };
+      for (let t = 0; t < NT; t++) for (let rr = 2; rr < NR - 2; rr++) accS[t * NR + rr] = tmpR[t * NR + rr] + 0.5 * (at(t - 1, rr) + at(t + 1, rr));
+    }
     // peaks
     const minVotes = Math.max(14, Math.min(w, h) * (opts.live ? 0.16 : 0.13));
     const peaks = [];
     for (let t = 0; t < NT; t++) {
       for (let rr = 1; rr < NR - 1; rr++) {
-        const v = accH[t * NR + rr];
+        const v = accS[t * NR + rr];
         if (v < minVotes) continue;
         let isMax = true;
         for (let dt = -4; dt <= 4 && isMax; dt++) {
@@ -1106,7 +1157,7 @@ function FolioEngine() {
             let r2 = rr + dr;
             if (rOff) r2 = 2 * rhoMax - r2; // the same line with flipped normal
             if (r2 < 0 || r2 >= NR) continue;
-            const u = accH[ti * NR + r2];
+            const u = accS[ti * NR + r2];
             if (u > v || (u === v && (dt < 0 || (dt === 0 && dr < 0)))) { isMax = false; break; }
           }
         }
@@ -1114,6 +1165,7 @@ function FolioEngine() {
       }
     }
     peaks.sort((a, b) => b.votes - a.votes);
+    if (opts.debug) { opts.debug.edge = edge; opts.debug.mag = mag; opts.debug.peaks = peaks.slice(0, 40); opts.debug.acc = { accH, NR, rhoMax, minVotes }; }
     const maxEach = opts.live ? 8 : 11;
     const Hs = [], Vs = [];
     for (const p of peaks) {
@@ -1123,8 +1175,9 @@ function FolioEngine() {
       if (Hs.length >= maxEach && Vs.length >= maxEach) break;
     }
     // the image borders stand in for page sides that run out of frame
-    Hs.push({ c: 0, s: 1, rho: 1, t: 90, border: 'top' }, { c: 0, s: 1, rho: h - 2, t: 90, border: 'bottom' });
-    Vs.push({ c: 1, s: 0, rho: 1, t: 0, border: 'left' }, { c: 1, s: 0, rho: w - 2, t: 0, border: 'right' });
+    // (just inside the clipping range below, so their support is actually measured)
+    Hs.push({ c: 0, s: 1, rho: 2, t: 90, border: 'top' }, { c: 0, s: 1, rho: h - 3, t: 90, border: 'bottom' });
+    Vs.push({ c: 1, s: 0, rho: 2, t: 0, border: 'left' }, { c: 1, s: 0, rho: w - 3, t: 0, border: 'right' });
 
     // reference position of each line across the image
     const yAt = (l, x) => (Math.abs(l.s) < 1e-6 ? NaN : (l.rho - l.c * x) / l.s);
@@ -1143,7 +1196,7 @@ function FolioEngine() {
 
     // Precompute, for every candidate line, a running count of supporting edge pixels along it
     // and running sums of brightness just either side of it. Side scores then cost O(1).
-    const off = Math.max(3, r + 1);
+    const off = Math.max(3, r + 1), off2 = Math.round(off * 2.6);
     // paper reference brightness: the page is normally the brightest large area
     const hL = new Uint32Array(256);
     for (let i = 0; i < N; i += 2) hL[clamp(L[i] | 0, 0, 255)]++;
@@ -1162,9 +1215,9 @@ function FolioEngine() {
         if (b < t1) t1 = b;
       }
       l.dx = dx; l.dy = dy; l.fx = fx; l.fy = fy;
-      if (t1 <= t0) { l.t0 = 0; l.n = 0; l.S = new Float32Array(1); l.P = new Float32Array(1); l.M = new Float32Array(1); return; }
+      if (t1 <= t0) { l.t0 = 0; l.n = 0; l.S = new Float32Array(1); l.P = new Float32Array(1); l.M = new Float32Array(1); l.P2 = new Float32Array(1); l.M2 = new Float32Array(1); return; }
       const ts = Math.ceil(t0), n = Math.max(0, Math.floor(t1) - ts + 1);
-      const S = new Float32Array(n + 1), P = new Float32Array(n + 1), M = new Float32Array(n + 1);
+      const S = new Float32Array(n + 1), P = new Float32Array(n + 1), M = new Float32Array(n + 1), P2 = new Float32Array(n + 1), M2 = new Float32Array(n + 1);
       // normal (c, s) points to +rho side
       for (let k = 0; k < n; k++) {
         const t = ts + k, x = fx + dx * t, y = fy + dy * t;
@@ -1189,8 +1242,13 @@ function FolioEngine() {
         const xm = clamp(Math.round(x - l.c * off), 0, w - 1), ym = clamp(Math.round(y - l.s * off), 0, h - 1);
         P[k + 1] = P[k] + L[yp * w + xp];
         M[k + 1] = M[k] + L[ym * w + xm];
+        // further out too: a book's cover rim or a dark border is narrow, the page lies beyond it
+        const xp2 = clamp(Math.round(x + l.c * off2), 0, w - 1), yp2 = clamp(Math.round(y + l.s * off2), 0, h - 1);
+        const xm2 = clamp(Math.round(x - l.c * off2), 0, w - 1), ym2 = clamp(Math.round(y - l.s * off2), 0, h - 1);
+        P2[k + 1] = P2[k] + L[yp2 * w + xp2];
+        M2[k + 1] = M2[k] + L[ym2 * w + xm2];
       }
-      l.t0 = ts; l.n = n; l.S = S; l.P = P; l.M = M;
+      l.t0 = ts; l.n = n; l.S = S; l.P = P; l.M = M; l.P2 = P2; l.M2 = M2;
     };
     for (const l of Hs) prep(l);
     for (const l of Vs) prep(l);
@@ -1206,7 +1264,8 @@ function FolioEngine() {
       if (inside > 4 && !l.border) {
         const plus = (cx * l.c + cy * l.s) > l.rho; // centre on the +normal side
         const dp = (l.P[b] - l.P[a]) / inside, dm = (l.M[b] - l.M[a]) / inside;
-        contrast = plus ? dp - dm : dm - dp;
+        const dp2 = (l.P2[b] - l.P2[a]) / inside, dm2 = (l.M2[b] - l.M2[a]) / inside;
+        contrast = plus ? Math.max(dp, dp2) - dm : Math.max(dm, dm2) - dp;
       }
       return { len, inside, hits, contrast };
     };
@@ -1255,6 +1314,8 @@ function FolioEngine() {
             borderSides++;
             const bf = sd.inside ? sd.hits / sd.inside : 0;
             supLen += inLen * (bf > 0.6 ? 0.8 * bf : 0.25 * bf);
+            // the frame stands in for a page side only where the page really runs into it
+            if (sd.inside > 6 && bf < minSup) minSup = Math.max(0, bf);
             continue;
           }
           let frac = sd.inside ? sd.hits / sd.inside : 0;
@@ -1276,11 +1337,18 @@ function FolioEngine() {
           else if (darker >= counted - 1) score *= 0.85;
         }
         score *= Math.pow(0.94, borderSides);
+        if (opts.book) {
+          // an open book lies wider than it is tall
+          const wq = (Math.hypot(tr[0] - tl[0], tr[1] - tl[1]) + Math.hypot(br[0] - bl[0], br[1] - bl[1])) / 2;
+          const hq = (Math.hypot(bl[0] - tl[0], bl[1] - tl[1]) + Math.hypot(br[0] - tr[0], br[1] - tr[1])) / 2;
+          if (wq < hq * 1.05) score *= 0.72;
+        }
         if (prev) {
           let md = 0;
           for (let i = 0; i < 4; i++) md = Math.max(md, Math.hypot(q[i][0] - prev[i][0], q[i][1] - prev[i][1]));
           if (md < 0.04 * diag) score *= 1.12;
         }
+        if (opts.debug) { (opts.debug.cands = opts.debug.cands || []).push({ q: q.map((p) => p.map((v) => +v.toFixed(0))), score: +score.toFixed(3), minSup: +minSup.toFixed(2), borderSides, sides: sides.map((sd) => [+(sd.inside ? sd.hits / sd.inside : 0).toFixed(2), +sd.contrast.toFixed(1)]) }); }
         if (!best || score > best.score) best = { quad: q, score, minSup, borderSides };
       }
     }
@@ -1500,6 +1568,132 @@ function FolioEngine() {
     }
   }
 
+  // paper colour from the background map at one point (out = [r, g, b])
+  function bgAt(bg, x, y, out) {
+    const gw = bg.gw;
+    const gxf = clamp((x + 0.5) / bg.cell - 0.5, 0, gw - 1), gyf = clamp((y + 0.5) / bg.cell - 0.5, 0, bg.gh - 1);
+    const gx0 = gxf | 0, gy0 = gyf | 0, gx1 = Math.min(gw - 1, gx0 + 1), gy1 = Math.min(bg.gh - 1, gy0 + 1);
+    const tx = gxf - gx0, ty = gyf - gy0;
+    const a = gy0 * gw + gx0, b = gy0 * gw + gx1, c = gy1 * gw + gx0, e = gy1 * gw + gx1;
+    const w00 = (1 - tx) * (1 - ty), w01 = tx * (1 - ty), w10 = (1 - tx) * ty, w11 = tx * ty;
+    out[0] = bg.r[a] * w00 + bg.r[b] * w01 + bg.r[c] * w10 + bg.r[e] * w11;
+    out[1] = bg.g[a] * w00 + bg.g[b] * w01 + bg.g[c] * w10 + bg.g[e] * w11;
+    out[2] = bg.b[a] * w00 + bg.b[b] * w01 + bg.b[c] * w10 + bg.b[e] * w11;
+    return out;
+  }
+
+  // Bits of the desk left inside the page's borders after cutting it out - a folded, torn or curled
+  // corner, a crumpled stretch of edge - become paper. outside: per side of the outline (sides run
+  // TL->TR, TR->BR, BR->BL, BL->TL), the colours sampled just outside the page along that side.
+  // From each border, grow over pixels that look like the desk out there (and unlike the paper), a short
+  // way in (further near the corners, where folds and curls leave wedges). opts.spine: 'left'|'right'
+  // for a book page (that side is left alone, and the corners next to it get no extra reach).
+  function fillIntrusions(img, bg, outside, opts) {
+    opts = opts || {};
+    if (!outside) return { filled: 0, depth: 0 };
+    const W = img.width, H = img.height, d = img.data;
+    const P = [0, 0, 0];
+    let filled = 0, deepest = 0;
+    // (a side along the photo's own edge has nothing outside it: the page is cut off there, and whatever
+    // touches that border is the page's own print)
+    for (let s = 0; s < 4; s++) {
+      const arr = outside[s];
+      if (!arr || (opts.spine === 'right' && s === 1) || (opts.spine === 'left' && s === 3)) continue;
+      const horiz = s % 2 === 0, along = horiz ? W : H, across = horiz ? H : W, N = arr.length;
+      const maxSide = Math.max(3, Math.round(across * 0.012));
+      const maxCorner = Math.min(across - 1, Math.max(maxSide, Math.round(Math.min(W, H) * 0.07)));
+      const spineAtStart = opts.spine === 'left' && horiz, spineAtEnd = opts.spine === 'right' && horiz; // a = 0 is the left end
+      const X = (a, k) => (s === 0 ? a : s === 1 ? W - 1 - k : s === 2 ? a : k);
+      const Y = (a, k) => (s === 0 ? k : s === 1 ? a : s === 2 ? H - 1 - k : a);
+      // reach and the desk colour for each place along this border
+      const lim = new Int16Array(along), refs = new Array(along);
+      for (let a = 0; a < along; a++) {
+        const u = s <= 1 ? a / (along - 1) : 1 - a / (along - 1);
+        const ref = arr[Math.round(clamp((u - 0.02) / 0.96, 0, 1) * (N - 1))];
+        refs[a] = ref;
+        if (!ref) { lim[a] = -1; continue; }
+        const dStart = spineAtStart ? Infinity : a / along, dEnd = spineAtEnd ? Infinity : (along - 1 - a) / along;
+        lim[a] = Math.round(maxSide + (maxCorner - maxSide) * Math.max(0, 1 - Math.min(dStart, dEnd) / 0.18));
+      }
+      // Where a pixel sits on the line from the paper's colour (0) to the desk's (1); NaN when it is far
+      // off that line, or the desk looks too much like the paper to tell them apart.
+      const alphaAt = (a, k) => {
+        const ref = refs[a];
+        if (!ref) return NaN;
+        const x = X(a, k), y = Y(a, k), p = (y * W + x) * 4;
+        bgAt(bg, x, y, P);
+        const w0 = ref[0] - P[0], w1 = ref[1] - P[1], w2 = ref[2] - P[2];
+        const ww = w0 * w0 + w1 * w1 + w2 * w2;
+        if (ww < 1600) return NaN;
+        const v0 = d[p] - P[0], v1 = d[p + 1] - P[1], v2 = d[p + 2] - P[2];
+        const al = (v0 * w0 + v1 * w1 + v2 * w2) / ww;
+        const r2 = v0 * v0 + v1 * v1 + v2 * v2 - al * al * ww;
+        return r2 < 0.0625 * ww ? al : NaN;
+      };
+      // desk: well over half way to the desk colour (a thin sliver of desk is blurred with the paper next
+      // to it; shade on the paper stays nearer the paper)
+      const deskAt = (a, k, minAl) => {
+        const al = alphaAt(a, k);
+        return al >= (minAl || 0.6) && al <= 1.8;
+      };
+      // Grow each patch of desk from the border. A patch that runs on past the reach allowed here gets
+      // twice the reach to finish; if it still goes on, it is not a stray bit of desk (a dark picture
+      // printed to the edge, say) and is left alone.
+      // a patch that reaches the border of a side with nothing known outside it (cut off by the photo's
+      // edge, or a book's spine) may be anything: leave it
+      const openStart = !outside[horiz ? 3 : 0] || (horiz && opts.spine === 'left');
+      const openEnd = !outside[horiz ? 1 : 2] || (horiz && opts.spine === 'right');
+      const KK = Math.min(across - 1, 2 * maxCorner + 4) + 1;
+      const mask = new Uint8Array(along * KK);
+      const queue = [];
+      for (let a0 = 0; a0 < along; a0++) {
+        if (mask[a0 * KK] || lim[a0] < 0 || (a0 === 0 && openStart) || (a0 === along - 1 && openEnd) || !deskAt(a0, 0, 0.72)) continue;
+        const start = queue.length;
+        mask[a0 * KK] = 1; queue.push(a0 * KK);
+        let tooDeep = false;
+        for (let qi = start; qi < queue.length; qi++) {
+          const v = queue[qi], a = (v / KK) | 0, k = v - a * KK;
+          for (let nb = 0; nb < 4; nb++) {
+            const na = nb === 0 ? a - 1 : nb === 1 ? a + 1 : a, nk = nb === 2 ? k - 1 : nb === 3 ? k + 1 : k;
+            if (na < 0 || na >= along || nk < 0 || nk >= across || lim[na] < 0) continue;
+            if (nk > 2 * lim[na] + 4 || nk >= KK) { if (deskAt(na, nk)) tooDeep = true; continue; }
+            const w = na * KK + nk;
+            if (mask[w] || !deskAt(na, nk)) continue;
+            if ((na === 0 && openStart) || (na === along - 1 && openEnd)) { tooDeep = true; continue; }
+            mask[w] = 1; queue.push(w);
+          }
+          if (tooDeep) break;
+        }
+        if (tooDeep) {
+          // drop the patch (keep the mask marks so it is not grown again from another border pixel)
+          for (let qi = start; qi < queue.length; qi++) mask[queue[qi]] = 2;
+          queue.length = start;
+        }
+      }
+      if (!queue.length) continue;
+      // paint each column solid from the border to the deepest desk found near it, then on through the
+      // soft rim between desk and paper
+      const kmax = new Int16Array(along).fill(-1);
+      for (const v of queue) { const a = (v / KK) | 0, k = v - a * KK; if (k > kmax[a]) kmax[a] = k; }
+      for (let a = 0; a < along; a++) {
+        let m = -1;
+        for (let j = Math.max(0, a - 2); j <= Math.min(along - 1, a + 2); j++) m = Math.max(m, kmax[j]);
+        if (m < 0) continue;
+        let k = m + 1;
+        const kEnd = Math.min(across - 1, m + 7);
+        while (k <= kEnd && alphaAt(a, k) >= 0.1) k++;
+        if (m > deepest) deepest = m;
+        for (let kk = 0; kk <= Math.min(k, across - 1); kk++) {
+          const x = X(a, kk), y = Y(a, kk), p = (y * W + x) * 4;
+          bgAt(bg, x, y, P);
+          d[p] = P[0]; d[p + 1] = P[1]; d[p + 2] = P[2];
+          filled++;
+        }
+      }
+    }
+    return { filled, depth: deepest };
+  }
+
   /* ------------------------------------------------------------------ fingers and edge clean-up */
 
   // Finds fingers (any skin tone) and dark slivers that reach in from the page edges.
@@ -1682,7 +1876,8 @@ function FolioEngine() {
     opts = opts || {};
     const filter = opts.filter || 'auto', darken = !!opts.darken;
     const W = img.width, H = img.height, s = img.data;
-    const out = makeImage(W, H), d = out.data;
+    // in place for full-resolution pages (saves a whole copy of the page in memory)
+    const out = opts.inPlace ? img : makeImage(W, H), d = out.data;
     const rr = new Float32Array(W), rg = new Float32Array(W), rb = new Float32Array(W);
     const maskAt = opts.mask && opts.mask.any ? upsampleMask(opts.mask, W, H) : null;
     const paper = bg.paper;
@@ -1711,13 +1906,17 @@ function FolioEngine() {
       const th = otsu(hist, 20, 205) / 200;
       bwT = clamp(th + 0.04, darken ? 0.68 : 0.6, darken ? 0.86 : 0.8);
     }
+    const ir = new Float32Array(W), ig = new Float32Array(W), ib = new Float32Array(W);
     for (let y = 0; y < H; y++) {
       bgRow(bg, y, rr, rg, rb, W);
       for (let x = 0; x < W; x++) {
-        const p = (y * W + x) * 4;
+        if (rr[x] < 8) rr[x] = 8; if (rg[x] < 8) rg[x] = 8; if (rb[x] < 8) rb[x] = 8;
+        ir[x] = 1 / rr[x]; ig[x] = 1 / rg[x]; ib[x] = 1 / rb[x];
+      }
+      for (let x = 0, p = y * W * 4; x < W; x++, p += 4) {
         let r = s[p], g = s[p + 1], b = s[p + 2];
-        const br = Math.max(8, rr[x]), bgc = Math.max(8, rg[x]), bb = Math.max(8, rb[x]);
-        let nr = r / br, ng = g / bgc, nb = b / bb;
+        const br = rr[x], bgc = rg[x], bb = rb[x];
+        let nr = r * ir[x], ng = g * ig[x], nb = b * ib[x];
         let a = 0;
         if (maskAt) {
           a = maskAt(x, y) / 255;
@@ -1733,13 +1932,13 @@ function FolioEngine() {
         if (nr > 1.3) nr = 1.3; if (ng > 1.3) ng = 1.3; if (nb > 1.3) nb = 1.3;
         const Y = 0.299 * nr + 0.587 * ng + 0.114 * nb;
         if (filter === 'grey') {
-          const v = curve[Math.round(Y * 1000)];
+          const v = curve[(Y * 1000 + 0.5) | 0];
           d[p] = d[p + 1] = d[p + 2] = v; d[p + 3] = 255;
         } else if (filter === 'bw') {
           const v = clamp((Y - (bwT - 0.07)) / 0.14, 0, 1) * 255;
           d[p] = d[p + 1] = d[p + 2] = v; d[p + 3] = 255;
         } else {
-          let cr = curve[Math.round(nr * 1000)], cg = curve[Math.round(ng * 1000)], cb = curve[Math.round(nb * 1000)];
+          let cr = curve[(nr * 1000 + 0.5) | 0], cg = curve[(ng * 1000 + 0.5) | 0], cb = curve[(nb * 1000 + 0.5) | 0];
           const cy = 0.299 * cr + 0.587 * cg + 0.114 * cb;
           const sat = 1.22;
           cr = cy + (cr - cy) * sat; cg = cy + (cg - cy) * sat; cb = cy + (cb - cy) * sat;
@@ -1747,22 +1946,113 @@ function FolioEngine() {
         }
       }
     }
-    if (filter === 'auto' || filter === 'grey') sharpen(out, filter === 'grey' ? 0.45 : 0.35);
+    if (filter === 'auto' || filter === 'grey') {
+      // detail scales with resolution: high-resolution pages also get a slightly wider unsharp mask
+      const hd = Math.max(W, H) > 2800;
+      sharpen(out, filter === 'grey' ? 0.45 : 0.35, hd ? (filter === 'grey' ? 0.22 : 0.18) : 0);
+    }
     return { image: out, paper };
   }
 
-  function sharpen(img, amount) {
+  // Unsharp mask on luminance, streamed row by row (no full-size buffers, so it is cheap for HD pages):
+  // amount1 x (L - [1 2 1] blur) + amount2 x (L - [1 4 6 4 1] blur), both from the original values.
+  function sharpen(img, amount1, amount2) {
     const W = img.width, H = img.height, d = img.data;
-    const n = W * H;
-    const Lp = new Float32Array(n);
-    for (let i = 0, j = 0; i < n; i++, j += 4) Lp[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
-    const bl = Lp.slice(), t = new Float32Array(n);
-    blur121(bl, W, H, t);
-    for (let i = 0, j = 0; i < n; i++, j += 4) {
-      const delta = (Lp[i] - bl[i]) * amount;
-      if (delta > -1 && delta < 1) continue;
-      d[j] += delta; d[j + 1] += delta; d[j + 2] += delta;
+    const a1 = amount1 || 0, a2 = amount2 || 0;
+    // rows y-2 .. y+2 of original luminance, and their two horizontal blurs
+    const L = [], h3 = [], h5 = [];
+    for (let i = 0; i < 5; i++) { L.push(new Float32Array(W)); h3.push(new Float32Array(W)); h5.push(new Float32Array(W)); }
+    const load = (y, k) => {
+      const yy = y < 0 ? 0 : y >= H ? H - 1 : y;
+      const l = L[k], b3 = h3[k], b5 = h5[k];
+      let p = yy * W * 4;
+      for (let x = 0; x < W; x++, p += 4) l[x] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      for (let x = 0; x < W; x++) {
+        const xm1 = x > 0 ? x - 1 : 0, xp1 = x < W - 1 ? x + 1 : W - 1;
+        const xm2 = x > 1 ? x - 2 : 0, xp2 = x < W - 2 ? x + 2 : W - 1;
+        b3[x] = (l[xm1] + 2 * l[x] + l[xp1]) * 0.25;
+        b5[x] = (l[xm2] + 4 * l[xm1] + 6 * l[x] + 4 * l[xp1] + l[xp2]) * 0.0625;
+      }
+    };
+    for (let k = 0; k < 5; k++) load(k - 2, k);
+    for (let y = 0; y < H; y++) {
+      const Lc = L[2], A3 = h3[1], B3 = h3[2], C3 = h3[3];
+      const A5 = h5[0], B5 = h5[1], C5 = h5[2], D5 = h5[3], E5 = h5[4];
+      let p = y * W * 4;
+      for (let x = 0; x < W; x++, p += 4) {
+        const v = Lc[x];
+        let delta = a1 * (v - (A3[x] + 2 * B3[x] + C3[x]) * 0.25);
+        if (a2) delta += a2 * (v - (A5[x] + 4 * B5[x] + 6 * C5[x] + 4 * D5[x] + E5[x]) * 0.0625);
+        if (delta > -1 && delta < 1) continue;
+        d[p] += delta; d[p + 1] += delta; d[p + 2] += delta;
+      }
+      // rotate the ring and read row y + 3 (not modified yet)
+      L.push(L.shift()); h3.push(h3.shift()); h5.push(h5.shift());
+      load(y + 3, 4);
     }
+  }
+
+  // Last guarantee for an edge-to-edge page: a thin dark line left along a border (desk, shadow,
+  // the other page at the spine) is painted over with the paper next to it. Only thin runs that start
+  // at the very edge and recur along the side are touched, so print near the edge is left alone.
+  function cleanBorder(img, opts) {
+    opts = opts || {};
+    const W = img.width, H = img.height, d = img.data;
+    const sides = opts.sides || { top: true, right: true, bottom: true, left: true };
+    let cleaned = 0;
+    const lum = (p) => 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    const doSide = (n, depthMax, at) => {
+      // at(i, k): byte offset of the pixel at position i along the side, k pixels in from the edge
+      const maxD = Math.max(3, Math.round(depthMax * 0.007));
+      const runs = new Int16Array(n), ref = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        // paper level a little further in: the brighter part of a short strip
+        let best = 0;
+        for (let k = maxD + 2; k < maxD * 4 + 6; k += 2) { const v = lum(at(i, Math.min(depthMax - 1, k))); if (v > best) best = v; }
+        ref[i] = best;
+      }
+      // smooth the paper level along the side (running max over a short window)
+      const refS = new Float32Array(n), win = Math.max(2, Math.round(n * 0.01));
+      for (let i = 0; i < n; i++) { let m = 0; for (let j = Math.max(0, i - win); j <= Math.min(n - 1, i + win); j++) m = Math.max(m, ref[j]); refS[i] = m; }
+      for (let i = 0; i < n; i++) {
+        const P = refS[i];
+        if (P < 60) continue;
+        let k = 0;
+        while (k < maxD && lum(at(i, k)) < 0.84 * P) k++;
+        if (k > 0 && k < maxD && lum(at(i, k + 1 < depthMax ? k + 1 : k)) >= 0.84 * P) runs[i] = k;
+        else if (!k) {
+          // a faint line of a pixel or two right at the edge
+          while (k < 2 && lum(at(i, k)) < 0.92 * P) k++;
+          if (k > 0 && lum(at(i, k)) >= 0.95 * P) runs[i] = k;
+        }
+      }
+      // keep runs that are part of a line along the edge (or are only a pixel or two thick)
+      const minSeg = Math.max(6, Math.round(n * 0.02));
+      let i = 0;
+      while (i < n) {
+        if (!runs[i]) { i++; continue; }
+        let j = i;
+        while (j < n && runs[j]) j++;
+        const seg = j - i;
+        for (let q = i; q < j; q++) {
+          const r = runs[q];
+          if (seg < minSeg && r > 2) continue;
+          // paint the run (and a pixel more, softly) with the paper just inside it
+          const src = at(q, Math.min(depthMax - 1, r + 2));
+          for (let k = 0; k <= r; k++) {
+            const p = at(q, k), a = k < r ? 1 : 0.5;
+            d[p] += (d[src] - d[p]) * a; d[p + 1] += (d[src + 1] - d[p + 1]) * a; d[p + 2] += (d[src + 2] - d[p + 2]) * a;
+          }
+          cleaned++;
+        }
+        i = j;
+      }
+    };
+    if (sides.top) doSide(W, H, (i, k) => (k * W + i) * 4);
+    if (sides.bottom) doSide(W, H, (i, k) => ((H - 1 - k) * W + i) * 4);
+    if (sides.left) doSide(H, W, (i, k) => (i * W + k) * 4);
+    if (sides.right) doSide(H, W, (i, k) => (i * W + (W - 1 - k)) * 4);
+    return { cleaned };
   }
 
   /* ------------------------------------------------------------------ checks */
@@ -1863,14 +2153,14 @@ function FolioEngine() {
     for (let x = 0; x < W; x++) {
       const dd = dist(x);
       if (dd >= zone) continue;
-      let g = R / Math.max(20, prof[x]);
-      if (g <= 1.02) continue;
-      g = Math.min(g, 3);
+      const g = Math.min(3, Math.max(1, R / Math.max(20, prof[x])));
+      // no threshold here: a cut-off would leave a visible step in pictures and tinted paper
       const taper = dd > zone * 0.7 ? 1 - (dd - zone * 0.7) / (zone * 0.3) : 1;
       gain[x] = 1 + (g - 1) * taper;
-      any = true;
+      if (gain[x] > 1.015) any = true;
     }
     if (!any) return { lifted: false };
+    { const t2 = new Float32Array(W); boxBlur(gain, W, 1, Math.max(2, Math.round(W / 200)), t2); }
     for (let y = 0; y < H; y++) {
       let p = y * W * 4;
       for (let x = 0; x < W; x++, p += 4) {
@@ -1941,20 +2231,1326 @@ function FolioEngine() {
   }
 
   return {
-    makeImage, resize, scaleToLong, luma, detectQuad, refineQuad, orderCorners, homography, applyH, warp,
+    makeImage, resize, scaleToLong, luma, detectQuad, refineQuad, orderCorners, homography, applyH, warp, solve,
     estimateAspect, snapAspect, outputSize, estimateBackground, bgRow, detectFingers, applyFilter, blurScore,
-    findGutter, splitSpread, liftGutter, fingerprint, fingerprintDiff, rotate, crop, polyArea,
+    findGutter, splitSpread, liftGutter, fingerprint, fingerprintDiff, rotate, crop, polyArea, cleanBorder,
+    fastClose, boxBlur, blur121, fillIntrusions, bgAt,
   };
 }
 if (typeof module !== 'undefined') module.exports = FolioEngine;
 
+/* ---- outline.js ---- */
+/* Folio page outline.
+   Finds the exact edges of a page (or of each page of an open book) at full photo resolution,
+   lets the sides curve, and builds the mapping that flattens the page:
+     homography through the four corners  +  Coons patch for curved sides
+     +  arc-length correction where a page curls (book pages bend down into the spine).
+   Plain RGBA images {width, height, data}, no DOM, so it runs in a worker or in Node. */
+function FolioOutline(E) {
+  'use strict';
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const NSIDE = 32; // segments per stored side polyline
+
+  /* ------------------------------------------------------------------ sampling */
+  // bilinear RGB; writes into out[0..2]
+  function rgbAt(img, x, y, out) {
+    const w = img.width, h = img.height, d = img.data;
+    if (x < 0) x = 0; else if (x > w - 1.001) x = w - 1.001;
+    if (y < 0) y = 0; else if (y > h - 1.001) y = h - 1.001;
+    const x0 = x | 0, y0 = y | 0, tx = x - x0, ty = y - y0;
+    const p = (y0 * w + x0) << 2, q = p + (w << 2);
+    const a = (1 - tx) * (1 - ty), b = tx * (1 - ty), c = (1 - tx) * ty, e = tx * ty;
+    out[0] = d[p] * a + d[p + 4] * b + d[q] * c + d[q + 4] * e;
+    out[1] = d[p + 1] * a + d[p + 5] * b + d[q + 1] * c + d[q + 5] * e;
+    out[2] = d[p + 2] * a + d[p + 6] * b + d[q + 2] * c + d[q + 6] * e;
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ guides */
+  // A guide is a polyline from one corner to the next. g.at(t) -> point, g.normal(t) -> outward unit normal.
+  function makeGuide(pts, centre) {
+    const n = pts.length, cum = new Float64Array(n);
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const L = cum[n - 1] || 1;
+    // which way is outward? away from the page centre
+    const mid = pts[Math.floor(n / 2)], a = pts[0], b = pts[n - 1];
+    let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+    const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+    const sign = (centre[0] - mid[0]) * nx + (centre[1] - mid[1]) * ny > 0 ? -1 : 1;
+    function seg(t) {
+      const s = clamp(t, 0, 1) * L;
+      let i = 1;
+      while (i < n - 1 && cum[i] < s) i++;
+      return i;
+    }
+    return {
+      len: L,
+      at(t) {
+        if (t <= 0 || t >= 1) {
+          // linear extension beyond the ends
+          const i = t <= 0 ? 1 : n - 1, p = pts[i - 1], q = pts[i], sl = cum[i] - cum[i - 1] || 1;
+          const s = t * L - cum[i - 1];
+          return [p[0] + ((q[0] - p[0]) * s) / sl, p[1] + ((q[1] - p[1]) * s) / sl];
+        }
+        const i = seg(t), p = pts[i - 1], q = pts[i], sl = cum[i] - cum[i - 1] || 1, f = (t * L - cum[i - 1]) / sl;
+        return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+      },
+      normal(t) {
+        // smoothed tangent over ~4% of the side
+        const dt = 0.02;
+        const p = this.at(t - dt), q = this.at(t + dt);
+        let tx = q[0] - p[0], ty = q[1] - p[1];
+        const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+        return [-ty * sign, tx * sign];
+      },
+    };
+  }
+
+  /* ------------------------------------------------------------------ edge evidence */
+  // For K positions along a guide, score every offset o (o0..o1, step 1 px, + = outward) as the place
+  // where the page ends: paper on the inside, something that is not paper just outside, and a step.
+  function edgeScores(img, guide, K, tA, tB, o0, o1, opts) {
+    const O = o1 - o0 + 1;
+    const wi = opts.wi || 4, wo = opts.wo || 4, wx = 2 * wo + 2;
+    const refIn = opts.refIn || 10, refLen = opts.refLen || 14; // paper reference window, inside the band
+    const lo = o0 - wi - refIn - refLen, hi = o1 + wx + 1;
+    const P = hi - lo + 1;
+    const Es = new Float32Array(K * O);
+    const Ls = new Float32Array(K * P); // luminance profiles
+    const RGB = new Float32Array(K * P * 3); // colour profiles (for scoring and sub-pixel refinement)
+    const papers = new Float32Array(K * 3);
+    const pts = new Array(K), nrm = new Array(K), ts = new Float64Array(K);
+    const c = [0, 0, 0];
+    const pl = new Float32Array(P), cpl = new Float64Array(P + 1), cR = new Float64Array(P + 1), cG = new Float64Array(P + 1), cB = new Float64Array(P + 1);
+    const cInk = new Float64Array(P + 1), cPap = new Float64Array(P + 1);
+    const refL = [];
+    for (let k = 0; k < K; k++) {
+      const t = K > 1 ? tA + ((tB - tA) * k) / (K - 1) : (tA + tB) / 2;
+      const g = guide.at(t), n = guide.normal(t);
+      ts[k] = t; pts[k] = g; nrm[k] = n;
+      const base = k * P;
+      for (let i = 0; i < P; i++) {
+        const o = lo + i;
+        rgbAt(img, g[0] + n[0] * o, g[1] + n[1] * o, c);
+        const q = (base + i) * 3;
+        RGB[q] = c[0]; RGB[q + 1] = c[1]; RGB[q + 2] = c[2];
+        Ls[base + i] = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+      }
+      // paper: the bright, common colour over everything inside the guide (text, pictures and shade
+      // are darker, so a high percentile of the inside part of the profile is the paper)
+      refL.length = 0;
+      const iEnd = Math.max(refLen, Math.min(P, -lo + 1)); // profile indices for offsets <= 0
+      for (let i = 0; i < iEnd; i++) refL.push(i);
+      refL.sort((a, b) => Ls[base + b] - Ls[base + a]);
+      const j0 = Math.floor(refL.length * 0.1), j1 = Math.max(j0 + 2, Math.floor(refL.length * 0.3));
+      let pr = 0, pg = 0, pb = 0;
+      for (let j = j0; j < j1; j++) { const q = (base + refL[j]) * 3; pr += RGB[q]; pg += RGB[q + 1]; pb += RGB[q + 2]; }
+      const take = j1 - j0;
+      papers[k * 3] = pr / take; papers[k * 3 + 1] = pg / take; papers[k * 3 + 2] = pb / take;
+    }
+    // smooth the paper colour along the side (median of neighbours per channel)
+    const sm = new Float32Array(K * 3), win = [];
+    for (let k = 0; k < K; k++) for (let ch = 0; ch < 3; ch++) {
+      win.length = 0;
+      for (let j = Math.max(0, k - 3); j <= Math.min(K - 1, k + 3); j++) win.push(papers[j * 3 + ch]);
+      win.sort((a, b) => a - b);
+      sm[k * 3 + ch] = win[win.length >> 1];
+    }
+    const bias = opts.outwardBias || 0;
+    for (let k = 0; k < K; k++) {
+      const pr = Math.max(8, sm[k * 3]), pg = Math.max(8, sm[k * 3 + 1]), pb = Math.max(8, sm[k * 3 + 2]);
+      const pL = 0.299 * pr + 0.587 * pg + 0.114 * pb;
+      // where the 'paper' just inside is far darker than the page itself, this stretch of the band is
+      // off the page (on the desk): a step there is not the page's edge
+      const onPage = opts.paperL ? smooth(0.32, 0.55, pL / opts.paperL) : 1;
+      const base = k * P;
+      for (let i = 0; i < P; i++) {
+        const q = (base + i) * 3;
+        c[0] = RGB[q]; c[1] = RGB[q + 1]; c[2] = RGB[q + 2];
+        const L = Ls[base + i];
+        const dL = (pL - L) / pL;
+        // chroma relative to the paper's own tint
+        const iL = 1 / Math.max(8, L), ipL = 1 / pL;
+        const dc = Math.abs(c[0] * iL - pr * ipL) + Math.abs(c[1] * iL - pg * ipL) + Math.abs(c[2] * iL - pb * ipL);
+        const v = (1 - smooth(0.07, 0.17, Math.abs(dL))) * (1 - smooth(0.05, 0.12, dc));
+        pl[i] = v;
+        cpl[i + 1] = cpl[i] + v;
+        cInk[i + 1] = cInk[i] + (L < 0.6 * pL ? 1 : 0);
+        cPap[i + 1] = cPap[i] + (v > 0.7 ? 1 : 0);
+        cR[i + 1] = cR[i] + c[0] * ipL; cG[i + 1] = cG[i] + c[1] * ipL; cB[i + 1] = cB[i] + c[2] * ipL;
+      }
+      const t = ts[k], lim = opts.inLimit ? opts.inLimit(t) : Infinity;
+      for (let oi = 0; oi < O; oi++) {
+        const i = oi + (o0 - lo); // index of offset o in the profile
+        const a0 = i - wi + 1, a1 = i + 1, b0 = i + 1, b1 = i + 1 + wo;
+        const inPL = (cpl[a1] - cpl[a0]) / wi;
+        const outNP = 1 - (cpl[b1] - cpl[b0]) / wo;
+        const dr = (cR[a1] - cR[a0]) / wi - (cR[b1] - cR[b0]) / wo;
+        const dg = (cG[a1] - cG[a0]) / wi - (cG[b1] - cG[b0]) / wo;
+        const db = (cB[a1] - cB[a0]) / wi - (cB[b1] - cB[b0]) / wo;
+        const contrast = Math.abs(dr) * 0.3 + Math.abs(dg) * 0.5 + Math.abs(db) * 0.2 + 0.5 * Math.hypot(dr - dg, dg - db);
+        let e = inPL * inPL * outNP * Math.min(1, contrast / 0.12) * onPage;
+        // printed matter (ink with paper between) just outside means this is a line of text or a rule
+        // on the page, not the page's edge
+        const x0 = i + 1, x1 = Math.min(P, i + 1 + wx);
+        const nx = Math.max(1, x1 - x0);
+        if ((cInk[x1] - cInk[x0]) / nx > 0.06 && (cPap[x1] - cPap[x0]) / nx > 0.2) e *= 0.15;
+        if (bias) e += bias * (oi / Math.max(1, O - 1)) * (e > 0.05 ? 1 : 0);
+        if (o0 + oi < -lim) e = -0.5;
+        Es[k * O + oi] = e;
+      }
+      // pages lie on top of whatever is behind them: of several edge-like steps, the outermost strong
+      // one is the page's edge, the inner ones are things printed on it
+      if (opts.outermost !== false) {
+        const row = k * O;
+        let outer = -1;
+        for (let oi = O - 2; oi >= 1; oi--) {
+          const e = Es[row + oi];
+          if (e >= 0.32 && e >= Es[row + oi - 1] && e >= Es[row + oi + 1]) { outer = oi; break; }
+        }
+        if (outer > 0) for (let oi = 0; oi < outer - (wi + 2); oi++) if (Es[row + oi] > 0) Es[row + oi] *= 0.35;
+      }
+    }
+    return { K, O, o0, lo, P, Es, Ls, RGB, ts, pts, nrm, papers: sm };
+  }
+
+  // Best smooth path through the score table (Viterbi): maximise sum(E) - lambda * sum(|step|).
+  function dpPath(S, lambda, jump, ends) {
+    const { K, O, Es, o0 } = S;
+    const acc = new Float32Array(K * O), from = new Int16Array(K * O);
+    const okAt = (range, o) => !range || (o0 + o >= range[0] && o0 + o <= range[1]);
+    for (let o = 0; o < O; o++) acc[o] = Es[o] - (ends && !okAt(ends.start, o) ? 50 : 0);
+    for (let k = 1; k < K; k++) {
+      const base = k * O, prev = (k - 1) * O;
+      for (let o = 0; o < O; o++) {
+        let best = -1e9, bo = o;
+        const a = Math.max(0, o - jump), b = Math.min(O - 1, o + jump);
+        for (let q = a; q <= b; q++) {
+          const v = acc[prev + q] - lambda * Math.abs(q - o);
+          if (v > best) { best = v; bo = q; }
+        }
+        acc[base + o] = best + Es[base + o];
+        from[base + o] = bo;
+      }
+    }
+    let o = -1;
+    for (let q = 0; q < O; q++) {
+      if (ends && !okAt(ends.end, q)) continue;
+      if (o < 0 || acc[(K - 1) * O + q] > acc[(K - 1) * O + o]) o = q;
+    }
+    if (o < 0) o = 0;
+    const path = new Int16Array(K);
+    for (let k = K - 1; k >= 0; k--) { path[k] = o; o = from[k * O + o]; }
+    return path;
+  }
+
+  // Sub-pixel position of the edge near offset index oi of sample k: centre of the luminance step,
+  // and how wide the step is (10..90%).
+  function refineStep(S, k, oi) {
+    const { P, Ls, RGB, lo, o0 } = S;
+    const base = k * P, i = oi + (o0 - lo);
+    // colour gradient (so edges that differ mostly in colour are located as well as bright/dark ones)
+    const cg = (j) => {
+      const a = (base + j - 1) * 3, b = (base + j + 1) * 3;
+      const dr = RGB[b] - RGB[a], dg = RGB[b + 1] - RGB[a + 1], db = RGB[b + 2] - RGB[a + 2];
+      return Math.sqrt(dr * dr + dg * dg + db * db);
+    };
+    let bi = i, bg = 0;
+    for (let j = Math.max(1, i - 3); j <= Math.min(P - 2, i + 3); j++) {
+      const gr = cg(j);
+      if (gr > bg) { bg = gr; bi = j; }
+    }
+    let off = 0;
+    if (bi > 1 && bi < P - 2) {
+      const gm = cg(bi - 1), gp = cg(bi + 1);
+      const den = gm - 2 * bg + gp;
+      if (den < 0) off = clamp(0.5 * (gm - gp) / den, -0.5, 0.5);
+    }
+    // step width: distance between 10% and 90% of the local luminance step
+    const a = Ls[base + Math.max(0, bi - 6)], b = Ls[base + Math.min(P - 1, bi + 6)];
+    const lo10 = a + (b - a) * 0.1, hi90 = a + (b - a) * 0.9;
+    let j0 = bi, j1 = bi;
+    const up = b > a;
+    while (j0 > Math.max(0, bi - 6) && (up ? Ls[base + j0] > lo10 : Ls[base + j0] < lo10)) j0--;
+    while (j1 < Math.min(P - 1, bi + 6) && (up ? Ls[base + j1] < hi90 : Ls[base + j1] > hi90)) j1++;
+    return { o: lo + bi + off, width: Math.abs(b - a) > 6 ? j1 - j0 : 2, strength: bg };
+  }
+
+  /* ------------------------------------------------------------------ robust fitting */
+  // weighted least squares line d = a + b t
+  function wline(ts, ds, ws) {
+    let sw = 0, st = 0, sd = 0, stt = 0, std = 0;
+    for (let i = 0; i < ts.length; i++) {
+      const w = ws[i];
+      if (!w) continue;
+      sw += w; st += w * ts[i]; sd += w * ds[i]; stt += w * ts[i] * ts[i]; std += w * ts[i] * ds[i];
+    }
+    if (sw <= 0) return { a: 0, b: 0 };
+    const den = sw * stt - st * st;
+    if (Math.abs(den) < 1e-12) return { a: sd / sw, b: 0 };
+    const b = (sw * std - st * sd) / den;
+    return { a: (sd - b * st) / sw, b };
+  }
+  function mad(res, ws) {
+    const v = [];
+    for (let i = 0; i < res.length; i++) if (ws[i] > 0) v.push(Math.abs(res[i]));
+    if (!v.length) return 1;
+    v.sort((a, b) => a - b);
+    return v[v.length >> 1];
+  }
+  // robust line (bisquare IRLS)
+  function robustLine(ts, ds, w0) {
+    const n = ts.length, ws = Float64Array.from(w0);
+    let L = wline(ts, ds, ws);
+    for (let it = 0; it < 6; it++) {
+      const res = new Float64Array(n);
+      for (let i = 0; i < n; i++) res[i] = ds[i] - (L.a + L.b * ts[i]);
+      const s = Math.max(0.35, 1.4826 * mad(res, w0));
+      for (let i = 0; i < n; i++) { const u = res[i] / (4.685 * s); ws[i] = w0[i] * (Math.abs(u) < 1 ? (1 - u * u) * (1 - u * u) : 0); }
+      L = wline(ts, ds, ws);
+    }
+    return { a: L.a, b: L.b, ws };
+  }
+  // robust polynomial d = sum c_i x^i with x = 2t - 1 (bisquare IRLS). Smooth bends only: a finger
+  // pressing on an edge is a short, deep bump that a low-order curve cannot follow, so it drops out.
+  function robustPoly(ts, ds, w0, deg) {
+    const n = ts.length, m = deg + 1, ws = Float64Array.from(w0);
+    const solveW = () => {
+      const A = [], b = new Array(m).fill(0);
+      for (let i = 0; i < m; i++) A.push(new Array(m).fill(0));
+      for (let k = 0; k < n; k++) {
+        const w = ws[k];
+        if (!w) continue;
+        const x = 2 * ts[k] - 1, pw = [1];
+        for (let i = 1; i < m; i++) pw.push(pw[i - 1] * x);
+        for (let i = 0; i < m; i++) { b[i] += w * pw[i] * ds[k]; for (let j = 0; j < m; j++) A[i][j] += w * pw[i] * pw[j]; }
+      }
+      for (let i = 0; i < m; i++) A[i][i] += 1e-9;
+      return E.solve ? E.solve(A, b) : gauss(A, b);
+    };
+    const val = (c, t) => { const x = 2 * t - 1; let v = 0, p = 1; for (let i = 0; i < m; i++) { v += c[i] * p; p *= x; } return v; };
+    let c = solveW();
+    if (!c) return null;
+    for (let it = 0; it < 8; it++) {
+      const res = new Float64Array(n);
+      for (let k = 0; k < n; k++) res[k] = ds[k] - val(c, ts[k]);
+      const sc = Math.max(0.35, 1.4826 * mad(res, w0));
+      for (let k = 0; k < n; k++) { const u = res[k] / (4.685 * sc); ws[k] = w0[k] * (Math.abs(u) < 1 ? (1 - u * u) * (1 - u * u) : 0); }
+      const c2 = solveW();
+      if (!c2) break;
+      c = c2;
+    }
+    const f = (t) => val(c, t);
+    f.ws = ws;
+    return f;
+  }
+  function gauss(A, b) {
+    const n = b.length;
+    for (let i = 0; i < n; i++) {
+      let p = i;
+      for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;
+      if (Math.abs(A[p][i]) < 1e-14) return null;
+      [A[i], A[p]] = [A[p], A[i]]; [b[i], b[p]] = [b[p], b[i]];
+      for (let r = i + 1; r < n; r++) { const f = A[r][i] / A[i][i]; for (let c = i; c < n; c++) A[r][c] -= f * A[i][c]; b[r] -= f * b[i]; }
+    }
+    const x = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) { let v = b[i]; for (let c = i + 1; c < n; c++) v -= A[i][c] * x[c]; x[i] = v / A[i][i]; }
+    return x;
+  }
+
+  // robust LOESS: local lines with tricube weights over a bandwidth, bisquare robustness iterations.
+  // Returns a function d(t) by interpolating fits on a grid.
+  function robustLoess(ts, ds, w0, bw, grid) {
+    const n = ts.length, rob = new Float64Array(n).fill(1);
+    const G = grid || 65;
+    const gt = new Float64Array(G), gv = new Float64Array(G);
+    const tMin = ts[0], tMax = ts[n - 1];
+    const fitAt = (t) => {
+      let sw = 0, st = 0, sd = 0, stt = 0, std = 0;
+      for (let i = 0; i < n; i++) {
+        const u = Math.abs(ts[i] - t) / bw;
+        if (u >= 1) continue;
+        const k = 1 - u * u * u, w = w0[i] * rob[i] * k * k * k;
+        if (!w) continue;
+        sw += w; st += w * ts[i]; sd += w * ds[i]; stt += w * ts[i] * ts[i]; std += w * ts[i] * ds[i];
+      }
+      if (sw <= 1e-9) return NaN;
+      const den = sw * stt - st * st;
+      if (Math.abs(den) < 1e-12 * sw * sw) return sd / sw;
+      const b = (sw * std - st * sd) / den;
+      return (sd - b * st) / sw + b * t;
+    };
+    for (let it = 0; it < 3; it++) {
+      if (it) {
+        const res = new Float64Array(n);
+        for (let i = 0; i < n; i++) { const f = fitAt(ts[i]); res[i] = isNaN(f) ? 0 : ds[i] - f; }
+        const s = Math.max(0.35, 1.4826 * mad(res, w0));
+        for (let i = 0; i < n; i++) { const u = res[i] / (4.685 * s); rob[i] = Math.abs(u) < 1 ? (1 - u * u) * (1 - u * u) : 0; }
+      }
+    }
+    for (let g = 0; g < G; g++) {
+      gt[g] = tMin + ((tMax - tMin) * g) / (G - 1);
+      gv[g] = fitAt(gt[g]);
+    }
+    // fill holes from neighbours
+    for (let g = 0; g < G; g++) if (isNaN(gv[g])) {
+      let a = g - 1, b = g + 1;
+      while (a >= 0 && isNaN(gv[a])) a--;
+      while (b < G && isNaN(gv[b])) b++;
+      gv[g] = a >= 0 && b < G ? gv[a] + ((gv[b] - gv[a]) * (g - a)) / (b - a) : a >= 0 ? gv[a] : b < G ? gv[b] : 0;
+    }
+    const f = (t) => {
+      if (t <= gt[0]) { const s = (gv[1] - gv[0]) / (gt[1] - gt[0]); return gv[0] + s * (t - gt[0]); }
+      if (t >= gt[G - 1]) { const s = (gv[G - 1] - gv[G - 2]) / (gt[G - 1] - gt[G - 2]); return gv[G - 1] + s * (t - gt[G - 1]); }
+      const x = ((t - gt[0]) / (gt[G - 1] - gt[0])) * (G - 1), i = Math.min(G - 2, x | 0), fr = x - i;
+      return gv[i] + (gv[i + 1] - gv[i]) * fr;
+    };
+    f.rob = rob;
+    return f;
+  }
+
+  /* ------------------------------------------------------------------ tracing one side */
+  // Trace a page side near a guide. Returns {fit(t) -> point, straight, curved, width, ok}
+  // opts: {band:[in, out] px, K, curved: allow curves, bw: loess bandwidth, lambda, jump, bias}
+  function traceSide(img, guide, opts) {
+    const K = opts.K || 96;
+    const tA = opts.tA != null ? opts.tA : 0.02, tB = opts.tB != null ? opts.tB : 0.98;
+    const o0 = -Math.round(opts.band[0]), o1 = Math.round(opts.band[1]);
+    const S = edgeScores(img, guide, K, tA, tB, o0, o1, opts);
+    const path = dpPath(S, opts.lambda != null ? opts.lambda : 0.02, opts.jump || 3, opts.ends);
+    const ts = [], ds = [], ws = [], widths = [];
+    let strong = 0;
+    for (let k = 0; k < K; k++) {
+      const e = S.Es[k * S.O + path[k]];
+      const r = refineStep(S, k, path[k]);
+      ts.push(S.ts[k]);
+      ds.push(r.o);
+      const w = e > 0.18 ? Math.min(1, e) : 0;
+      ws.push(w);
+      if (w > 0) { strong++; widths.push(r.width); }
+    }
+    const res = { ok: strong >= Math.max(6, K * 0.25), strongFrac: strong / K, guide };
+    const dtag = opts.dumpTag || opts.debugTag;
+    if (dtag && typeof process !== 'undefined' && process.env.FOLIO_DUMP === dtag) {
+      console.log('dump', dtag, JSON.stringify(ts.map((t, i) => [+t.toFixed(3), +ds[i].toFixed(1), +ws[i].toFixed(2)])));
+    }
+    if (!res.ok) {
+      res.fit = (t) => guide.at(t);
+      res.dev = () => 0;
+      res.curved = false;
+      res.width = 2;
+      return res;
+    }
+    widths.sort((a, b) => a - b);
+    res.width = widths[widths.length >> 1];
+    const line = robustLine(ts, ds, ws);
+    let dev = (t) => line.a + line.b * t;
+    res.curved = false;
+    if (opts.curved) {
+      // sheets and outer edges bend smoothly (low-order curve); the head and tail of a book page dive
+      // into the spine, which needs a local fit
+      const lo = opts.forceCurve ? robustLoess(ts, ds, ws, opts.bw || 0.12) : (robustPoly(ts, ds, ws, 4) || robustLoess(ts, ds, ws, opts.bw || 0.12));
+      // curved only if the smooth fit departs clearly and consistently from the line
+      let maxDev = 0, rl = 0, rc = 0, n = 0;
+      for (let k = 0; k < K; k++) {
+        const t = ts[k];
+        if (t > 0.04 && t < 0.96) maxDev = Math.max(maxDev, Math.abs(lo(t) - dev(t)));
+        if (!line.ws[k]) continue;
+        rl += (ds[k] - dev(t)) ** 2; rc += (ds[k] - lo(t)) ** 2; n++;
+      }
+      const thr = Math.max(opts.curveMinPx || 2.0, (opts.curveFrac || 0.0022) * guide.len);
+      if (opts.forceCurve || (maxDev > thr && rc < rl * 0.7)) { dev = lo; res.curved = true; }
+      res.maxDev = maxDev;
+      if (opts.debugTag && typeof process !== 'undefined' && process.env.FOLIO_DEBUG) console.log('trace', opts.debugTag, 'maxDev', maxDev.toFixed(2), 'thr', thr.toFixed(2), 'rl', (rl / Math.max(1, n)).toFixed(3), 'rc', (rc / Math.max(1, n)).toFixed(3), 'strong', res.strongFrac.toFixed(2), 'curved', res.curved);
+    }
+    // beyond the stretch that has evidence (a corner off the page, hidden or out of the frame), carry
+    // the side on along its tangent instead of trusting a polynomial's wild ends
+    if (res.curved && !opts.forceCurve) {
+      let k0 = 0, k1 = K - 1;
+      while (k0 < K - 3 && !(ws[k0] > 0 && ws[k0 + 1] > 0 && ws[k0 + 2] > 0)) k0++;
+      while (k1 > 2 && !(ws[k1] > 0 && ws[k1 - 1] > 0 && ws[k1 - 2] > 0)) k1--;
+      const t0 = ts[k0], t1 = ts[k1], span = tB - tA;
+      if (t1 - t0 > 0.35 * span && (t0 > tA + 0.05 * span || t1 < tB - 0.05 * span)) {
+        const inner = dev, h = 0.03 * span;
+        const s0 = (inner(t0 + h) - inner(t0)) / h, s1 = (inner(t1) - inner(t1 - h)) / h;
+        const d0 = inner(t0), d1 = inner(t1);
+        dev = (t) => (t < t0 ? d0 + s0 * (t - t0) : t > t1 ? d1 + s1 * (t - t1) : inner(t));
+        res.evidence = [t0, t1];
+      }
+    }
+    res.dev = dev;
+    res.fit = (t) => {
+      const g = guide.at(t), n = guide.normal(clamp(t, 0, 1));
+      const d = dev(t);
+      return [g[0] + n[0] * d, g[1] + n[1] * d];
+    };
+    return res;
+  }
+
+  // polyline of a traced side between t0 and t1
+  function sidePoints(side, t0, t1, n) {
+    const out = [];
+    for (let i = 0; i <= n; i++) out.push(side.fit(t0 + ((t1 - t0) * i) / n));
+    return out;
+  }
+  // intersection of two lines given as point + direction
+  function lineX(p, d, q, e) {
+    const den = d[0] * e[1] - d[1] * e[0];
+    if (Math.abs(den) < 1e-9) return null;
+    const s = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den;
+    return [p[0] + d[0] * s, p[1] + d[1] * s];
+  }
+  // Where side A (ending at its t=1) meets side B (starting at its t=0): intersect local tangents,
+  // then polish once with tangents at the found parameters.
+  function cornerOf(A, B) {
+    let ta = 1, tb = 0, X = null;
+    for (let it = 0; it < 3; it++) {
+      const pa = A.fit(ta), pa2 = A.fit(ta - 0.04);
+      const pb = B.fit(tb), pb2 = B.fit(tb + 0.04);
+      X = lineX(pa, [pa[0] - pa2[0], pa[1] - pa2[1]], pb, [pb2[0] - pb[0], pb2[1] - pb[1]]);
+      if (!X) return A.fit(1);
+      // parameters of X along each side (project on the guide chords)
+      const ga = A.guide, gb = B.guide;
+      const a0 = ga.at(0), a1 = ga.at(1), b0 = gb.at(0), b1 = gb.at(1);
+      const la = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) || 1, lb = Math.hypot(b1[0] - b0[0], b1[1] - b0[1]) || 1;
+      ta = ((X[0] - a0[0]) * (a1[0] - a0[0]) + (X[1] - a0[1]) * (a1[1] - a0[1])) / (la * la);
+      tb = ((X[0] - b0[0]) * (b1[0] - b0[0]) + (X[1] - b0[1]) * (b1[1] - b0[1])) / (lb * lb);
+      ta = clamp(ta, A.followed ? 0.7 : 0.85, 1.15); tb = clamp(tb, -0.15, B.followed ? 0.3 : 0.15);
+    }
+    return X;
+  }
+  // parameter along a traced side closest to point X (searching near t0)
+  function paramOf(side, X, t0) {
+    let best = t0, bd = Infinity;
+    for (let t = t0 - 0.32; t <= t0 + 0.32; t += 0.004) {
+      const p = side.fit(t), d = (p[0] - X[0]) ** 2 + (p[1] - X[1]) ** 2;
+      if (d < bd) { bd = d; best = t; }
+    }
+    for (let t = best - 0.004; t <= best + 0.004; t += 0.0002) {
+      const p = side.fit(t), d = (p[0] - X[0]) ** 2 + (p[1] - X[1]) ** 2;
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
+
+  /* ------------------------------------------------------------------ page outline */
+  const centreOf = (q) => [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
+  function onBorder(p0, p1, W, H) {
+    const tol = Math.max(3, 0.004 * Math.max(W, H));
+    return (p0[0] < tol && p1[0] < tol) || (p0[1] < tol && p1[1] < tol) ||
+      (p0[0] > W - 1 - tol && p1[0] > W - 1 - tol) || (p0[1] > H - 1 - tol && p1[1] > H - 1 - tol);
+  }
+
+  // Two passes per side: a coarse one on a ~1200 px copy with a wide band (finds curves and the outer
+  // paper edge), then a fine one at full resolution around it.
+  // brightness of the page itself: a high percentile over a grid inside the coarse outline
+  function pageBrightness(mid, qm) {
+    const Hq = E.homography([[0, 0], [1, 0], [1, 1], [0, 1]], qm);
+    const ls = [], c = [0, 0, 0];
+    for (let gy = 0; gy < 13; gy++) for (let gx = 0; gx < 13; gx++) {
+      const p = E.applyH(Hq, 0.15 + (0.7 * gx) / 12, 0.15 + (0.7 * gy) / 12);
+      if (!(p[0] >= 0 && p[1] >= 0 && p[0] < mid.width && p[1] < mid.height)) continue;
+      rgbAt(mid, p[0], p[1], c);
+      ls.push(0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]);
+    }
+    if (ls.length < 30) return 0;
+    ls.sort((a, b) => a - b);
+    return ls[Math.floor(ls.length * 0.7)];
+  }
+
+  function traceQuadSides(img, mid, km, quad, opts) {
+    const W = img.width, H = img.height;
+    const c = centreOf(quad);
+    const cm = [c[0] / km, c[1] / km];
+    const sides = [];
+    const longM = Math.max(mid.width, mid.height);
+    const paperL = opts.paperL != null ? opts.paperL : pageBrightness(mid, quad.map(([x, y]) => [x / km, y / km]));
+    for (let i = 0; i < 4; i++) {
+      const p0 = quad[i], p1 = quad[(i + 1) % 4];
+      if (onBorder(p0, p1, W, H)) { sides.push({ border: true, ok: true, curved: false, width: 0, guide: makeGuide([p0, p1], c), fit: null }); continue; }
+      const bandOut = (opts.bandOut || 0.03) * longM, bandIn = (opts.bandIn && opts.bandIn[i] != null ? opts.bandIn[i] : (opts.bandInAll || 0.03)) * longM;
+      const gA = makeGuide([[p0[0] / km, p0[1] / km], [p1[0] / km, p1[1] / km]], cm);
+      const optsA = (g, extra) => Object.assign({
+        band: [bandIn, bandOut], K: opts.KA || 120, curved: true, bw: opts.bwA || 0.1, lambda: 0.035, jump: opts.jumpA || 3,
+        outwardBias: 0.12, wi: 3, wo: 3, refIn: 6, refLen: 10, curveMinPx: 1.0, curveFrac: 0.0018, debugTag: 'A' + i, paperL,
+      }, extra || {});
+      let A = traceSide(mid, gA, optsA(gA));
+      // A strongly bowed page bends away from the coarse straight side and leaves the search band near
+      // its ends: re-centre the band on the fit and trace again until the edge sits well inside it.
+      if (A.ok && opts.follow !== false) {
+        let cur = A, toU = (t) => t, drift = 0;
+        for (let it = 0; it < 5; it++) {
+          let reach = 0;
+          for (let j = 0; j <= 32; j++) {
+            const d = cur.dev(toU(0.02 + (0.96 * j) / 32));
+            reach = Math.max(reach, d > 0 ? d / bandOut : -d / bandIn);
+          }
+          if (reach < 0.62) break;
+          const pts = [];
+          for (let j = 0; j <= 48; j++) pts.push(cur.fit(toU(-0.06 + (1.12 * j) / 48)));
+          const g2 = makeGuide(pts, cm), u = (t) => (t + 0.06) / 1.12;
+          const next = traceSide(mid, g2, optsA(g2, { tA: u(0.02), tB: u(0.98), debugTag: 'A' + i + '.' + (it + 1) }));
+          if (!next.ok) break;
+          // how far has the edge moved from the coarse side? (a runaway trace is not a page edge)
+          let worst = 0;
+          for (let j = 0; j <= 16; j++) {
+            const t = j / 16, p = next.fit(u(t)), g = gA.at(t), n = gA.normal(t);
+            const o = (p[0] - g[0]) * n[0] + (p[1] - g[1]) * n[1];
+            worst = Math.max(worst, o > 0 ? o / (0.1 * longM) : -o / (0.24 * longM));
+          }
+          if (worst > 1) break;
+          cur = next; toU = u; drift = it + 1;
+        }
+        if (drift) {
+          const c2 = cur, u2 = toU;
+          A = { ok: true, curved: true, width: c2.width, strongFrac: c2.strongFrac, guide: gA, followed: drift,
+            fit: (t) => c2.fit(u2(t)) };
+        }
+      }
+      // guide for the fine pass: the coarse fit, scaled up
+      const gpts = [];
+      const nA = 48;
+      for (let j = 0; j <= nA; j++) {
+        const t = -0.06 + (1.12 * j) / nA;
+        const p = A.ok ? A.fit(t) : gA.at(t);
+        gpts.push([p[0] * km, p[1] * km]);
+      }
+      const gB = makeGuide(gpts, c);
+      const bandB = Math.max(6, Math.round(km * 2.5 + 3));
+      const B = traceSide(img, gB, {
+        band: [bandB, bandB], K: opts.KB || 160, tA: (0.06 + 0.025) / 1.12, tB: 1 - (0.06 + 0.025) / 1.12,
+        curved: true, bw: opts.bwB || 0.09, lambda: 0.06, jump: 2, outwardBias: 0.05,
+        wi: Math.max(3, Math.round(km * 1.5)), wo: Math.max(3, Math.round(km * 1.5)), refIn: Math.round(km * 4), refLen: Math.round(km * 6),
+        curveMinPx: Math.max(2, km * 0.8), curveFrac: opts.curveFrac || 0.0022, forceCurve: A.curved && opts.keepCurves, debugTag: 'B' + i, paperL,
+      });
+      const S = B.ok ? B : A.ok ? { ok: true, curved: A.curved, width: A.width * km, guide: gB, fit: (t) => gB.at(t), dev: () => 0 } : null;
+      if (!S) { sides.push({ ok: false, curved: false, width: 2, guide: makeGuide([p0, p1], c), fit: null }); continue; }
+      // re-express the fit along the original corner-to-corner parameter: fine guide runs from t=-0.06 to 1.06
+      const fit = S.fit, gpar = (t) => (t + 0.06) / 1.12;
+      // the fine fit follows the coarse curve, so the side is curved if either pass found a curve
+      sides.push({ ok: true, curved: S.curved || A.curved, width: S.width, strong: S.strongFrac, guide: makeGuide([p0, p1], c), fit: (t) => fit(gpar(t)), coarseCurved: A.curved, followed: A.followed || 0 });
+    }
+    return sides;
+  }
+
+  // Corners where traced sides meet; straight border sides stay on the frame.
+  function assemble(sides, quad, W, H) {
+    for (let i = 0; i < 4; i++) {
+      const s = sides[i];
+      if (!s.fit) s.fit = (t) => s.guide.at(t);
+    }
+    const corners = [];
+    for (let i = 0; i < 4; i++) {
+      const A = sides[(i + 3) % 4], B = sides[i];
+      let X = cornerOf(A, B);
+      const lim = (A.followed || B.followed ? 0.22 : 0.06) * Math.max(W, H);
+      if (!X || !isFinite(X[0]) || Math.hypot(X[0] - quad[i][0], X[1] - quad[i][1]) > lim) X = quad[i].slice();
+      corners.push([clamp(X[0], 0, W - 1), clamp(X[1], 0, H - 1)]);
+    }
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+      const s = sides[i];
+      if (!s.curved) { out.push(null); continue; }
+      const a = corners[i], b = corners[(i + 1) % 4];
+      const t0 = paramOf(s, a, 0), t1 = paramOf(s, b, 1);
+      const pts = sidePoints(s, t0, t1, NSIDE);
+      pts[0] = a.slice(); pts[NSIDE] = b.slice();
+      out.push(pts.map(([x, y]) => [clamp(x, 0, W - 1), clamp(y, 0, H - 1)]));
+    }
+    return { corners, sides: out };
+  }
+
+  // Move every side inward a little so the soft edge of the paper (and any shadow line) stays out.
+  function insetOutline(ol, amounts) {
+    const c = centreOf(ol.corners);
+    const sides = [];
+    const shiftPts = (pts, d) => {
+      const g = makeGuide(pts, c);
+      return pts.map((p, j) => {
+        const n = g.normal(j / (pts.length - 1));
+        return [p[0] - n[0] * d, p[1] - n[1] * d];
+      });
+    };
+    // straight sides become 2-point polylines for shifting; corners from neighbouring shifted sides
+    const lines = [];
+    for (let i = 0; i < 4; i++) {
+      const s = ol.sides[i];
+      const pts = s ? s : [ol.corners[i], ol.corners[(i + 1) % 4]];
+      const sh = shiftPts(pts, amounts[i]);
+      sides.push(sh);
+      lines.push(sh);
+    }
+    const corners = [];
+    for (let i = 0; i < 4; i++) {
+      const A = lines[(i + 3) % 4], B = lines[i];
+      const a1 = A[A.length - 1], a0 = A[A.length - 2], b0 = B[0], b1 = B[1];
+      const X = lineX(a1, [a1[0] - a0[0], a1[1] - a0[1]], b0, [b1[0] - b0[0], b1[1] - b0[1]]);
+      corners.push(X && Math.hypot(X[0] - ol.corners[i][0], X[1] - ol.corners[i][1]) < 40 + 4 * Math.max(...amounts) ? X : ol.corners[i]);
+    }
+    const out = sides.map((pts, i) => {
+      if (!ol.sides[i]) return null;
+      const q = pts.slice();
+      q[0] = corners[i]; q[q.length - 1] = corners[(i + 1) % 4];
+      return q;
+    });
+    return Object.assign({}, ol, { corners, sides: out });
+  }
+
+  function insetFor(side, km) {
+    if (side.border) return 0;
+    if (typeof process !== 'undefined' && process.env && process.env.FOLIO_NOINSET) return 0;
+    // half the measured edge width plus a pixel, at least ~1 px of the fine image
+    return clamp(0.5 * (side.width || 2) + 0.8, 1.2, 3 + 1.5 * km);
+  }
+
+  /* ------------------------------------------------------------------ what lies outside */
+  // Colours just outside each side of the outline (the desk, or whatever the page lies on), sampled at
+  // 48 places along the side. After flattening, these let the clean-up recognise bits of background left
+  // inside the page's borders (a folded or torn corner, a crumpled edge). null where the side runs along
+  // the photo's edge or there is nothing to sample. opts: {scale: outline px per image px, skip: [bool x4]}
+  function sampleOutside(img, ol, opts) {
+    opts = opts || {};
+    const W = img.width, H = img.height, k = 1 / (opts.scale || 1), N = 48;
+    const cs = ol.corners.map(([x, y]) => [x * k, y * k]);
+    const c = centreOf(cs);
+    const len = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const pageLong = Math.max(len(cs[0], cs[1]), len(cs[1], cs[2]), len(cs[2], cs[3]), len(cs[3], cs[0]));
+    const delta = Math.max(2, 0.01 * pageLong);
+    const tmp = [0, 0, 0], rs = [], gs = [], bs = [];
+    const med = (v) => { v.sort((a, b) => a - b); return Math.round(v[v.length >> 1]); };
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+      const sd = ol.sides && ol.sides[i];
+      if ((opts.skip && opts.skip[i]) || (!sd && !ol.corners)) { out.push(null); continue; }
+      const pts = sd ? sd.map(([x, y]) => [x * k, y * k]) : [cs[i], cs[(i + 1) % 4]];
+      const g = makeGuide(pts, c);
+      const arr = [];
+      let any = 0;
+      for (let j = 0; j < N; j++) {
+        const t = 0.02 + (0.96 * j) / (N - 1);
+        const p = g.at(t), n = g.normal(t), tg = [n[1], -n[0]];
+        rs.length = gs.length = bs.length = 0;
+        let ok = true;
+        for (const a of [1, 1.6, 2.2]) {
+          for (const b of [-0.6, 0, 0.6]) {
+            const x = p[0] + n[0] * a * delta + tg[0] * b * delta, y = p[1] + n[1] * a * delta + tg[1] * b * delta;
+            if (x < 0 || y < 0 || x > W - 1 || y > H - 1) { ok = false; break; }
+            rgbAt(img, x, y, tmp); rs.push(tmp[0]); gs.push(tmp[1]); bs.push(tmp[2]);
+          }
+          if (!ok) break;
+        }
+        if (ok) { arr.push([med(rs), med(gs), med(bs)]); any++; } else arr.push(null);
+      }
+      out.push(any >= N / 3 ? arr : null);
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ paper region */
+  // The page as a region: pixels with the paper's colour (text closed away), connected to the middle
+  // of the page. On a contrasting desk this finds the true outline even where it curls far from the
+  // coarse straight sides (a lifted corner, a bowed edge). Returns null where the desk looks like paper.
+  function paperRegion(mid, qm) {
+    const w = mid.width, h = mid.height, N = w * h, d = mid.data;
+    const L = new Float32Array(N), A = new Float32Array(N), B = new Float32Array(N), tmp = new Float32Array(N);
+    for (let i = 0, j = 0; i < N; i++, j += 4) {
+      const R = d[j], G = d[j + 1], Bl = d[j + 2];
+      L[i] = 0.299 * R + 0.587 * G + 0.114 * Bl;
+      A[i] = R - G; B[i] = (R + G) * 0.5 - Bl;
+    }
+    const r = Math.max(2, Math.round(Math.max(w, h) / 160));
+    E.fastClose(L, w, h, r);
+    E.boxBlur(A, w, h, r, tmp); E.boxBlur(B, w, h, r, tmp);
+    // paper colour from the middle of the coarse page
+    const c = centreOf(qm);
+    const Hq = E.homography([[0, 0], [1, 0], [1, 1], [0, 1]], qm);
+    const ls = [], as = [], bs = [];
+    for (let gy = 0; gy < 9; gy++) for (let gx = 0; gx < 9; gx++) {
+      const p = E.applyH(Hq, 0.2 + (0.6 * gx) / 8, 0.2 + (0.6 * gy) / 8);
+      const x = Math.round(p[0]), y = Math.round(p[1]);
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      const i = y * w + x;
+      ls.push(L[i]); as.push(A[i]); bs.push(B[i]);
+    }
+    if (ls.length < 20) return null;
+    const med = (v) => { const t = v.slice().sort((a, b) => a - b); return t[t.length >> 1]; };
+    const Lp = Math.max(40, med(ls)), Ap = med(as), Bp = med(bs);
+    const mask = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      const l = L[i] / Lp;
+      if (l > 0.7 && l < 1.3 && Math.abs(A[i] - Ap) < 0.07 * Lp + 6 && Math.abs(B[i] - Bp) < 0.09 * Lp + 7) mask[i] = 1;
+    }
+    // connected to the centre
+    const reg = new Uint8Array(N), stack = new Int32Array(N);
+    let sp = 0;
+    const seed = (x, y) => { const i = y * w + x; if (x >= 0 && y >= 0 && x < w && y < h && mask[i] && !reg[i]) { reg[i] = 1; stack[sp++] = i; } };
+    for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 5; gx++) { const p = E.applyH(Hq, 0.3 + 0.1 * gx, 0.3 + 0.1 * gy); seed(Math.round(p[0]), Math.round(p[1])); }
+    let area = 0, borderHits = 0;
+    while (sp > 0) {
+      const i = stack[--sp], x = i % w, y = (i / w) | 0;
+      area++;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) borderHits++;
+      if (x > 0) seed(x - 1, y); if (x < w - 1) seed(x + 1, y); if (y > 0) seed(x, y - 1); if (y < h - 1) seed(x, y + 1);
+    }
+    const qArea = Math.abs(E.polyArea(qm));
+    if (typeof process !== 'undefined' && process.env && process.env.FOLIO_DEBUG) console.log('region area', area, 'quad', Math.round(qArea), 'border', borderHits, 'Lp', Lp.toFixed(1), Ap.toFixed(1), Bp.toFixed(1));
+    if (!(area > 0.55 * qArea && area < 1.4 * qArea)) return null;
+    // the coarse page touches the frame only where its sides are on the frame
+    const onFrame = qm.filter((p) => p[0] < 3 || p[1] < 3 || p[0] > w - 4 || p[1] > h - 4).length;
+    if (!onFrame && borderHits > 0.03 * (w + h)) return null;
+    void c;
+    return { reg, w, h };
+  }
+
+  // Where does the page region start, coming in from outside along each sample's normal?
+  // Returns trace-like data for a side (offsets relative to the guide, + = outward).
+  function regionSide(R, guide, K, dIn, dOut) {
+    const { reg, w, h } = R;
+    const ts = [], ds = [], ws = [];
+    for (let k = 0; k < K; k++) {
+      const t = 0.02 + (0.96 * k) / (K - 1);
+      const g = guide.at(t), n = guide.normal(t);
+      let found = null;
+      // start outside; if already inside the page there, the page goes on past the guide: look outward
+      const at = (o) => { const x = Math.round(g[0] + n[0] * o), y = Math.round(g[1] + n[1] * o); return x >= 0 && y >= 0 && x < w && y < h ? reg[y * w + x] : -1; };
+      const startIn = at(dOut) === 1;
+      if (!startIn) {
+        for (let o = dOut; o >= -dIn; o--) { const v = at(o); if (v === 1) { found = o + 0.5; break; } }
+      }
+      ts.push(t);
+      ds.push(found == null ? 0 : found);
+      ws.push(found == null ? 0 : 1);
+    }
+    return { ts, ds, ws };
+  }
+
+  /* ------------------------------------------------------------------ single page */
+  function analyzeSheet(img, mid, km, quad, opts) {
+    const W = img.width, H = img.height;
+    const sides = traceQuadSides(img, mid, km, quad, opts);
+    const ol = assemble(sides, quad, W, H);
+    ol.kind = 'sheet';
+    const ins = sides.map((s) => insetFor(s, km));
+    const res = insetOutline(ol, ins);
+    res.curved = ol.sides.some(Boolean);
+    res.quality = sides.reduce((a, s) => a + (s.border ? 1 : s.ok ? (s.strong || 0.5) : 0), 0) / 4;
+    return res;
+  }
+
+  /* ------------------------------------------------------------------ open book */
+  // Coarse + fine trace of one side of a book page. inLimit(t): how far inward (fraction of the coarse
+  // image's long side) the edge may lie at t; outer: which end is an outer corner (pinned near the guide).
+  function traceBookSide(img, mid, km, p0, p1, centre, opt) {
+    const cm = [centre[0] / km, centre[1] / km];
+    const longM = Math.max(mid.width, mid.height);
+    const gA = makeGuide([[p0[0] / km, p0[1] / km], [p1[0] / km, p1[1] / km]], cm);
+    const pin = 0.012 * longM;
+    const ends = {};
+    if (opt.pinStart) ends.start = [-pin, pin];
+    if (opt.pinEnd) ends.end = [-pin, pin];
+    const maxIn = opt.maxIn * longM;
+    const A = traceSide(mid, gA, {
+      band: [maxIn, opt.out * longM], K: opt.K || 150, curved: true, forceCurve: !!opt.forceCurve,
+      bw: opt.bw || 0.1, lambda: 0.03, jump: opt.jump || 3, outwardBias: 0.1, wi: 3, wo: 3, refIn: 6, refLen: 10,
+      tA: opt.tA != null ? opt.tA : 0.025, tB: opt.tB != null ? opt.tB : 0.975,
+      inLimit: opt.inLimit ? (t) => opt.inLimit(t) * longM : null, ends, dumpTag: opt.tag ? opt.tag + 'A' : null,
+    });
+    const gpts = [];
+    for (let j = 0; j <= 48; j++) {
+      const t = -0.06 + (1.12 * j) / 48;
+      const p = A.ok ? A.fit(t) : gA.at(t);
+      gpts.push([p[0] * km, p[1] * km]);
+    }
+    const gB = makeGuide(gpts, centre);
+    const bandB = Math.max(6, Math.round(km * 2.5 + 3));
+    const B = traceSide(img, gB, {
+      band: [bandB, bandB], K: opt.KB || 170, tA: (0.06 + 0.025) / 1.12, tB: 1 - (0.06 + 0.025) / 1.12,
+      curved: true, forceCurve: !!opt.forceCurve && A.curved, bw: opt.bwB || 0.08, lambda: 0.06, jump: 2, outwardBias: 0.05,
+      wi: Math.max(3, Math.round(km * 1.5)), wo: Math.max(3, Math.round(km * 1.5)), refIn: Math.round(km * 4), refLen: Math.round(km * 6),
+      curveMinPx: Math.max(2, km * 0.8), dumpTag: opt.tag ? opt.tag + 'B' : null,
+    });
+    const guide = makeGuide([p0, p1], centre);
+    const Sd = B.ok ? B : A.ok ? { ok: true, curved: A.curved, width: A.width * km, strongFrac: A.strongFrac, fit: (t) => gB.at(t) } : null;
+    if (!Sd) return { ok: false, curved: false, width: 2, guide, fit: (t) => guide.at(t) };
+    const fit = Sd.fit, gpar = (t) => (t + 0.06) / 1.12;
+    return { ok: true, curved: !!opt.forceCurve || Sd.curved || A.curved, width: Sd.width, strong: Sd.strongFrac, guide, fit: (t) => fit(gpar(t)) };
+  }
+
+  // The spine: in the flattened spread, the darkest valley down the middle, row band by row band,
+  // fitted with a straight line u = a + b v. Returns null when there is no clear valley.
+  function findSpine(mid, qm) {
+    const wq = (Math.hypot(qm[1][0] - qm[0][0], qm[1][1] - qm[0][1]) + Math.hypot(qm[2][0] - qm[3][0], qm[2][1] - qm[3][1])) / 2;
+    const hq = (Math.hypot(qm[3][0] - qm[0][0], qm[3][1] - qm[0][1]) + Math.hypot(qm[2][0] - qm[1][0], qm[2][1] - qm[1][1])) / 2;
+    const ow = 720, oh = Math.max(240, Math.round((ow * hq) / Math.max(1, wq)));
+    const sp = E.warp(mid, qm, ow, oh);
+    const L = E.luma(sp);
+    const bands = 14, us = [], vs = [], ws = [];
+    const prof = new Float32Array(ow), tmp = new Float32Array(ow), col = [];
+    for (let bnd = 0; bnd < bands; bnd++) {
+      const y0 = Math.floor(oh * (0.1 + (0.8 * bnd) / bands)), y1 = Math.floor(oh * (0.1 + (0.8 * (bnd + 1)) / bands));
+      for (let x = 0; x < ow; x++) {
+        col.length = 0;
+        for (let y = y0; y < y1; y++) col.push(L[y * ow + x]);
+        col.sort((a, b) => a - b);
+        prof[x] = col[Math.floor(col.length * 0.8)]; // paper level in this column (ignores text)
+      }
+      // smooth lightly
+      for (let x = 0; x < ow; x++) { let sum = 0, n = 0; for (let d = -3; d <= 3; d++) { const xx = x + d; if (xx >= 0 && xx < ow) { sum += prof[xx]; n++; } } tmp[x] = sum / n; }
+      const a = Math.floor(ow * 0.3), b = Math.ceil(ow * 0.7);
+      let mi = a;
+      for (let x = a; x <= b; x++) if (tmp[x] < tmp[mi]) mi = x;
+      // valley depth against the paper on both sides of it
+      let left = 0, right = 0;
+      for (let x = Math.max(0, mi - Math.round(ow * 0.15)); x < mi - Math.round(ow * 0.04); x++) left = Math.max(left, tmp[x]);
+      for (let x = mi + Math.round(ow * 0.04); x < Math.min(ow, mi + Math.round(ow * 0.15)); x++) right = Math.max(right, tmp[x]);
+      const ref = Math.min(left, right);
+      const depth = ref > 0 ? (ref - tmp[mi]) / ref : 0;
+      if (depth < 0.04) continue;
+      // sub-sample position
+      let off = 0;
+      if (mi > 0 && mi < ow - 1) { const den = tmp[mi - 1] - 2 * tmp[mi] + tmp[mi + 1]; if (den > 0) off = clamp(0.5 * (tmp[mi - 1] - tmp[mi + 1]) / den, -0.5, 0.5); }
+      us.push((mi + 0.5 + off) / ow); vs.push((y0 + y1) / 2 / oh); ws.push(Math.min(1, depth / 0.15));
+    }
+    if (us.length < 4) return null;
+    const L1 = robustLine(vs, us, ws);
+    const inl = L1.ws.reduce((a, w) => a + (w > 0 ? 1 : 0), 0);
+    if (inl < 4) return null;
+    return { a: L1.a, b: L1.b, n: inl };
+  }
+
+  // Sharpen the spine at full resolution: in a narrow strip around the first estimate, the crease is
+  // the bottom of the shading valley (little smoothing, so uneven light pulls it less).
+  function refineSpine(img, quad, spine) {
+    const Hs = E.homography([[0, 0], [1, 0], [1, 1], [0, 1]], quad);
+    const wq = (Math.hypot(quad[1][0] - quad[0][0], quad[1][1] - quad[0][1]) + Math.hypot(quad[2][0] - quad[3][0], quad[2][1] - quad[3][1])) / 2;
+    const half = 0.05, nx = Math.max(40, Math.min(600, Math.round(wq * half * 2)));
+    const bands = 16, rowsPer = 24, c = [0, 0, 0];
+    const us = [], vs = [], ws = [];
+    const prof = new Float32Array(nx), col = new Float32Array(rowsPer), sm = new Float32Array(nx);
+    for (let bnd = 0; bnd < bands; bnd++) {
+      const v0 = 0.1 + (0.8 * bnd) / bands, v1 = 0.1 + (0.8 * (bnd + 1)) / bands;
+      const uc = spine.a + spine.b * (v0 + v1) / 2;
+      for (let x = 0; x < nx; x++) {
+        const u = uc - half + (2 * half * (x + 0.5)) / nx;
+        for (let r = 0; r < rowsPer; r++) {
+          const v = v0 + ((v1 - v0) * (r + 0.5)) / rowsPer;
+          const p = E.applyH(Hs, u, v);
+          rgbAt(img, p[0], p[1], c);
+          col[r] = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+        }
+        col.sort();
+        prof[x] = col[Math.floor(rowsPer * 0.8)];
+      }
+      const rad = Math.max(1, Math.round(nx / 160));
+      for (let x = 0; x < nx; x++) { let s = 0, n = 0; for (let d = -rad; d <= rad; d++) { const xx = x + d; if (xx >= 0 && xx < nx) { s += prof[xx]; n++; } } sm[x] = s / n; }
+      let mi = Math.round(nx * 0.15);
+      for (let x = Math.round(nx * 0.15); x < Math.round(nx * 0.85); x++) if (sm[x] < sm[mi]) mi = x;
+      let ref = 0;
+      for (let x = 0; x < nx; x++) ref = Math.max(ref, sm[x]);
+      const depth = ref > 0 ? (ref - sm[mi]) / ref : 0;
+      if (depth < 0.05) continue;
+      let off = 0;
+      if (mi > 0 && mi < nx - 1) { const den = sm[mi - 1] - 2 * sm[mi] + sm[mi + 1]; if (den > 0) off = clamp(0.5 * (sm[mi - 1] - sm[mi + 1]) / den, -0.5, 0.5); }
+      us.push(uc - half + (2 * half * (mi + 0.5 + off)) / nx); vs.push((v0 + v1) / 2); ws.push(Math.min(1, depth / 0.2));
+    }
+    if (us.length < 5) return spine;
+    const L1 = robustLine(vs, us, ws);
+    const inl = L1.ws.reduce((a, w) => a + (w > 0 ? 1 : 0), 0);
+    if (inl < 5) return spine;
+    // keep it close to the first estimate
+    if (Math.abs(L1.a - spine.a) > 0.03 || Math.abs(L1.a + L1.b - spine.a - spine.b) > 0.03) return spine;
+    return { a: L1.a, b: L1.b, n: inl, fine: true };
+  }
+
+  // where a traced side crosses a line (p + s d), searching t in [ta, tb]
+  function crossAt(side, p, d, ta, tb) {
+    const f = (t) => { const q = side.fit(t); return (q[0] - p[0]) * d[1] - (q[1] - p[1]) * d[0]; };
+    const N = 120;
+    let prevT = ta, prevF = f(ta), best = null;
+    for (let i = 1; i <= N; i++) {
+      const t = ta + ((tb - ta) * i) / N, v = f(t);
+      if ((prevF <= 0 && v >= 0) || (prevF >= 0 && v <= 0)) {
+        let a = prevT, b = t, fa = prevF;
+        for (let it = 0; it < 40; it++) { const m = (a + b) / 2, fm = f(m); if ((fa <= 0 && fm <= 0) || (fa >= 0 && fm >= 0)) { a = m; fa = fm; } else b = m; }
+        best = (a + b) / 2;
+        break;
+      }
+      prevT = t; prevF = v;
+    }
+    return best;
+  }
+
+  // Spread quad (outer corners of both pages) -> two page outlines, split along the spine.
+  function analyzeBook(img, mid, km, quad, opts) {
+    const W = img.width, H = img.height;
+    const qm = quad.map(([x, y]) => [x / km, y / km]);
+    const Hs = E.homography([[0, 0], [1, 0], [1, 1], [0, 1]], quad);
+    const Hi = E.homography(quad, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    const longF = Math.max(W, H);
+    // 1. a first spine line from the shading valley down the middle
+    let spine = findSpine(mid, qm);
+    if (!spine) { const gv = E.findGutter(E.warp(mid, qm, 600, 300)); spine = { a: gv.x, b: 0, n: 0 }; }
+    else spine = refineSpine(img, quad, spine);
+    let sp = (v) => E.applyH(Hs, spine.a + spine.b * v, v);
+    let sTop = sp(0), sBot = sp(1);
+    const spreadH = (Math.hypot(quad[3][0] - quad[0][0], quad[3][1] - quad[0][1]) + Math.hypot(quad[2][0] - quad[1][0], quad[2][1] - quad[1][1])) / 2;
+    const dipMax = Math.min(0.16, (0.14 * spreadH) / longF);
+    const base = 0.022;
+    const ext = (a, b, f) => [b[0] + (b[0] - a[0]) * f, b[1] + (b[1] - a[1]) * f];
+    const dipNearEnd = (t) => base + dipMax * smooth(0.5, 0.95, t);
+    const dipNearStart = (t) => base + dipMax * (1 - smooth(0.05, 0.5, t));
+    const hb = { maxIn: base + dipMax, out: 0.025, forceCurve: true, bw: 0.07, bwB: 0.1, jump: 4, K: 180 };
+    const cOf = (q) => [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
+    const cL = cOf([quad[0], sTop, sBot, quad[3]]), cR = cOf([sTop, quad[1], quad[2], sBot]);
+    // 2. head and tail of each page, reaching a little past the spine
+    const EXT = 0.06;
+    const tr = {};
+    if (!onBorder(quad[0], sTop, W, H)) tr.headL = traceBookSide(img, mid, km, quad[0], ext(quad[0], sTop, EXT), cL, Object.assign({ inLimit: dipNearEnd, pinStart: true, tag: 'hL' }, hb));
+    if (!onBorder(sBot, quad[3], W, H)) tr.tailL = traceBookSide(img, mid, km, ext(quad[3], sBot, EXT), quad[3], cL, Object.assign({ inLimit: dipNearStart, pinEnd: true }, hb));
+    if (!onBorder(sTop, quad[1], W, H)) tr.headR = traceBookSide(img, mid, km, ext(quad[1], sTop, EXT), quad[1], cR, Object.assign({ inLimit: dipNearStart, pinEnd: true }, hb));
+    if (!onBorder(quad[2], sBot, W, H)) tr.tailR = traceBookSide(img, mid, km, quad[2], ext(quad[2], sBot, EXT), cR, Object.assign({ inLimit: dipNearEnd, pinStart: true }, hb));
+    if (!onBorder(quad[3], quad[0], W, H)) tr.outL = traceBookSide(img, mid, km, quad[3], quad[0], cL, { maxIn: 0.03, out: 0.025, bw: 0.12, K: 140 });
+    if (!onBorder(quad[1], quad[2], W, H)) tr.outR = traceBookSide(img, mid, km, quad[1], quad[2], cR, { maxIn: 0.03, out: 0.025, bw: 0.12, K: 140 });
+    // 3. the spine runs through the bottom of the V where head (and tail) dive into the gutter: the most
+    // inward point of the traced head / tail near the first spine estimate
+    const vDip = (sides, top) => {
+      const pts = [];
+      for (const sd of sides) {
+        if (!sd || !sd.ok) continue;
+        for (let i = 0; i <= 300; i++) {
+          const t = -0.02 + (1.04 * i) / 300;
+          const p = sd.fit(t), r = E.applyH(Hi, p[0], p[1]);
+          pts.push({ u: r[0], v: top ? r[1] : 1 - r[1], p });
+        }
+      }
+      if (pts.length < 50) return null;
+      const u0 = spine.a + spine.b * (top ? 0 : 1);
+      let best = null;
+      for (const q of pts) if (Math.abs(q.u - u0) < 0.06 && (!best || q.v > best.v)) best = q;
+      if (!best) return null;
+      // a real V: clearly deeper than the edge a little to either side
+      let side = -Infinity;
+      for (const q of pts) if (Math.abs(q.u - best.u) > 0.05 && Math.abs(q.u - best.u) < 0.09) side = Math.max(side, q.v);
+      if (!(best.v - side > 0.004)) return null;
+      return best;
+    };
+    const vT = vDip([tr.headL, tr.headR], true), vB = vDip([tr.tailL, tr.tailR], false);
+    if (opts.debug) Object.assign(opts.debug, { valley: { a: spine.a, b: spine.b, n: spine.n }, vT: vT && { u: vT.u, v: vT.v }, vB: vB && { u: vB.u, v: vB.v }, Hi });
+    // (the V where head and tail dive into the gutter is kept for diagnostics; the shading crease is
+    // the more reliable spine marker)
+    sp = (v) => E.applyH(Hs, spine.a + spine.b * v, v);
+    sTop = sp(0); sBot = sp(1);
+    const spDir = [sBot[0] - sTop[0], sBot[1] - sTop[1]];
+    // 4. assemble each page
+    const pages = [];
+    for (const side of ['left', 'right']) {
+      const L = side === 'left';
+      const TL = L ? quad[0] : sTop, TR = L ? sTop : quad[1], BR = L ? sBot : quad[2], BL = L ? quad[3] : sBot;
+      const c = cOf([TL, TR, BR, BL]);
+      const straight = (a, b) => { const g = makeGuide([a, b], c); return { ok: true, curved: false, width: 0, border: true, guide: g, fit: (t) => g.at(t) }; };
+      const head = L ? tr.headL : tr.headR, tail = L ? tr.tailL : tr.tailR, outer = L ? tr.outL : tr.outR;
+      let cTop = sTop, cBot = sBot;
+      if (head) { const t = L ? crossAt(head, sTop, spDir, 0.6, 1.08) : crossAt(head, sTop, spDir, -0.08, 0.4); if (t != null) cTop = head.fit(t); }
+      if (tail) { const t = L ? crossAt(tail, sTop, spDir, -0.08, 0.4) : crossAt(tail, sTop, spDir, 0.6, 1.08); if (t != null) cBot = tail.fit(t); }
+      const sides = L
+        ? [head || straight(TL, cTop), Object.assign(straight(cTop, cBot), { spine: true }), tail || straight(cBot, BL), outer || straight(BL, TL)]
+        : [head || straight(cTop, TR), outer || straight(TR, BR), tail || straight(BR, cBot), Object.assign(straight(cBot, cTop), { spine: true })];
+      const spineIdx = L ? 1 : 3;
+      const corners = [];
+      for (let i = 0; i < 4; i++) {
+        let X = null;
+        if (L && i === 1) X = cTop; else if (L && i === 2) X = cBot; else if (!L && i === 0) X = cTop; else if (!L && i === 3) X = cBot;
+        if (!X) X = cornerOf(sides[(i + 3) % 4], sides[i]);
+        const ref = [TL, TR, BR, BL][i];
+        if (!X || !isFinite(X[0]) || Math.hypot(X[0] - ref[0], X[1] - ref[1]) > 0.08 * longF) X = ref.slice();
+        corners.push([clamp(X[0], 0, W - 1), clamp(X[1], 0, H - 1)]);
+      }
+      const outSides = [];
+      for (let i = 0; i < 4; i++) {
+        const sd = sides[i];
+        if (i === spineIdx || !sd.curved) { outSides.push(null); continue; }
+        const a = corners[i], b = corners[(i + 1) % 4];
+        // parameters of the corners along this traced side
+        const near = (X, t0) => paramOf(sd, X, t0);
+        const isHeadOrTail = sd === head || sd === tail;
+        const t0 = near(a, isHeadOrTail && !L && sd === head ? 0.06 / 1.06 : (isHeadOrTail && L && sd === tail ? 0.06 / 1.06 : 0));
+        const t1 = near(b, isHeadOrTail && L && sd === head ? 1 / 1.06 : (isHeadOrTail && !L && sd === tail ? 1 / 1.06 : 1));
+        const pts = sidePoints(sd, t0, t1, NSIDE);
+        pts[0] = a.slice(); pts[NSIDE] = b.slice();
+        outSides.push(pts.map(([x, y]) => [clamp(x, 0, W - 1), clamp(y, 0, H - 1)]));
+      }
+      const ol = { corners, sides: outSides, kind: 'book', book: { side } };
+      // the spine gets a small inset as well: the last pixels there are the crease, not the page
+      const pageW = Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]);
+      const ins = sides.map((sd, i) => (i === spineIdx ? Math.max(1.5, 0.0022 * pageW) : sd.border ? 0 : insetFor(sd, km)));
+      const res = insetOutline(ol, ins);
+      res.curved = outSides.some(Boolean);
+      res.quality = sides.reduce((acc, sd, i) => acc + (i === spineIdx || sd.border ? 1 : sd.ok ? (sd.strong || 0.5) : 0), 0) / 4;
+      pages.push(res);
+    }
+    return { pages, gutter: { a: spine.a, b: spine.b, bands: spine.n, fromV: !!spine.v } };
+  }
+
+  /* ------------------------------------------------------------------ entry point */
+  // img: full-resolution RGBA. opts: {book, hint: quad in px, mid: optional ~1200px copy}
+  function analyze(img, opts) {
+    opts = opts || {};
+    const W = img.width, H = img.height;
+    // one pass over the full photo for the ~1200 px copy, the 480 px copy comes from that
+    const mid = opts.mid || E.scaleToLong(img, 1200);
+    const small = E.scaleToLong(mid, 480);
+    const k1 = W / small.width;
+    const det = E.detectQuad(small, { book: !!opts.book });
+    let quad = null;
+    // corners on the frame (a page running out of the photo) snap exactly onto it
+    const snapB = (v, max) => (v < 3.2 * k1 ? 0 : v > max - 3.2 * k1 ? max : v);
+    if (det) quad = det.quad.map(([x, y]) => [snapB(x * k1, W - 1), snapB(y * k1, H - 1)]);
+    else if (opts.hint) quad = opts.hint.map((p) => p.slice());
+    const full = [[0, 0], [W - 1, 0], [W - 1, H - 1], [0, H - 1]];
+    if (!quad) {
+      const one = { corners: full, sides: [null, null, null, null], kind: opts.book ? 'book' : 'sheet', curved: false, quality: 0 };
+      if (!opts.book) return { found: false, pages: [one] };
+      // no outline found: split the frame down the middle
+      const l = { corners: [full[0], [W / 2, 0], [W / 2, H - 1], full[3]], sides: [null, null, null, null], kind: 'book', book: { side: 'left' }, curved: false, quality: 0 };
+      const r = { corners: [[W / 2, 0], full[1], full[2], [W / 2, H - 1]], sides: [null, null, null, null], kind: 'book', book: { side: 'right' }, curved: false, quality: 0 };
+      return { found: false, pages: [l, r] };
+    }
+    const km = W / mid.width;
+    if (opts.book) {
+      const b = analyzeBook(img, mid, km, quad, opts);
+      return { found: !!det, pages: b.pages, gutter: b.gutter, quad };
+    }
+    return { found: !!det, pages: [analyzeSheet(img, mid, km, quad, opts)], quad };
+  }
+
+  /* ------------------------------------------------------------------ flattening map */
+  // Output (s, t) in 0..1 -> photo pixel. Rectify through the corners, bend with the sides,
+  // stretch where the page curls.
+  function mapper(ol, W, H, opts) {
+    opts = opts || {};
+    const C = ol.corners;
+    const Hm = E.homography([[0, 0], [1, 0], [1, 1], [0, 1]], C);
+    const Hi = E.homography(C, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    const G = 129;
+    // side deviations in the rectified square, as functions on a grid
+    const devT = new Float64Array(G), devB = new Float64Array(G), devL = new Float64Array(G), devR = new Float64Array(G);
+    const sample = (pts, along, across, offset, flip) => {
+      // pts in px -> rectified; tabulate 'across' coordinate as a function of 'along'
+      const r = pts.map((p) => E.applyH(Hi, p[0], p[1]));
+      const a = r.map((q) => q[along]), v = r.map((q) => q[across] - offset);
+      const idx = a.map((_, i) => i).sort((i, j) => a[i] - a[j]);
+      const as = idx.map((i) => a[i]), vs = idx.map((i) => v[i]);
+      const out = new Float64Array(G);
+      let j = 0;
+      for (let g = 0; g < G; g++) {
+        const x = g / (G - 1);
+        while (j < as.length - 2 && as[j + 1] < x) j++;
+        const x0 = as[j], x1 = as[j + 1];
+        const f = x1 > x0 ? clamp((x - x0) / (x1 - x0), 0, 1) : 0;
+        out[g] = vs[j] + (vs[j + 1] - vs[j]) * f;
+      }
+      // pinned to zero at both ends (the corners)
+      const e0 = out[0], e1 = out[G - 1];
+      for (let g = 0; g < G; g++) out[g] -= e0 + ((e1 - e0) * g) / (G - 1);
+      return flip ? out : out;
+    };
+    const S = ol.sides || [];
+    if (S[0]) devT.set(sample(S[0], 0, 1, 0));
+    if (S[2]) devB.set(sample(S[2], 0, 1, 1));
+    if (S[3]) devL.set(sample(S[3], 1, 0, 0));
+    if (S[1]) devR.set(sample(S[1], 1, 0, 1));
+    const look = (arr, x) => {
+      const p = clamp(x, 0, 1) * (G - 1), i = Math.min(G - 2, p | 0), f = p - i;
+      return arr[i] + (arr[i + 1] - arr[i]) * f;
+    };
+    // arc-length correction across the page (u) from how tall the page looks at each column, and
+    // down the page (v) from how wide it looks at each row
+    const curvedTB = !!(S[0] || S[2]), curvedLR = !!(S[1] || S[3]);
+    const f = opts.f || 0.78 * Math.max(W, H);
+    const lenPx = (p, q) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+    const hPx = (lenPx(C[0], C[3]) + lenPx(C[1], C[2])) / 2, wPx = (lenPx(C[0], C[1]) + lenPx(C[3], C[2])) / 2;
+    const aspect = E.estimateAspect(C, W, H); // chord width / height
+    const reparam = (devA, devB2, D, scaleAlong) => {
+      // devA/devB2: deviations of the two opposite sides; height(x) = 1 + devB2 - devA
+      const n = G, z = new Float64Array(n), cum = new Float64Array(n);
+      for (let g = 0; g < n; g++) {
+        const hgt = Math.max(0.5, 1 + devB2[g] - devA[g]);
+        z[g] = D * (1 - 1 / hgt);
+      }
+      for (let g = 1; g < n; g++) {
+        const dx = scaleAlong / (n - 1), dz = z[g] - z[g - 1];
+        cum[g] = cum[g - 1] + Math.sqrt(dx * dx + dz * dz);
+      }
+      const total = cum[n - 1];
+      const stretch = total / scaleAlong;
+      if (!(stretch > 1.0005) || stretch > 1.35) return { phi: null, stretch: 1 };
+      // phi: output fraction -> rectified coordinate
+      const phi = new Float64Array(n);
+      let j = 0;
+      for (let g = 0; g < n; g++) {
+        const target = (total * g) / (n - 1);
+        while (j < n - 2 && cum[j + 1] < target) j++;
+        const f2 = cum[j + 1] > cum[j] ? (target - cum[j]) / (cum[j + 1] - cum[j]) : 0;
+        phi[g] = (j + clamp(f2, 0, 1)) / (n - 1);
+      }
+      return { phi, stretch };
+    };
+    let phiU = null, phiV = null, stretchU = 1, stretchV = 1;
+    if (opts.flatten !== false) {
+      if (curvedTB) { const r = reparam(devT, devB, f / Math.max(1, hPx), aspect); phiU = r.phi; stretchU = r.stretch; }
+      if (curvedLR) { const r = reparam(devL, devR, f / Math.max(1, wPx), 1 / aspect); phiV = r.phi; stretchV = r.stretch; }
+    }
+    const U = (s) => (phiU ? look(phiU, s) : s);
+    const V = (t) => (phiV ? look(phiV, t) : t);
+    const rect = (u, v) => [u + (1 - u) * look(devL, v) + u * look(devR, v), v + (1 - v) * look(devT, u) + v * look(devB, u)];
+    const map = (s, t) => { const u = U(s), v = V(t), r = rect(u, v); return E.applyH(Hm, r[0], r[1]); };
+    // inverse by Newton iterations (for tests and for placing marks)
+    const invert = (x, y, s0, t0) => {
+      let s = s0 != null ? s0 : 0.5, t = t0 != null ? t0 : 0.5;
+      for (let it = 0; it < 30; it++) {
+        const p = map(s, t), e = 1e-4;
+        const px = map(s + e, t), py = map(s, t + e);
+        const a = (px[0] - p[0]) / e, b = (py[0] - p[0]) / e, c = (px[1] - p[1]) / e, d = (py[1] - p[1]) / e;
+        const det = a * d - b * c;
+        if (Math.abs(det) < 1e-12) return null;
+        const rx = x - p[0], ry = y - p[1];
+        const ds = (d * rx - b * ry) / det, dt = (-c * rx + a * ry) / det;
+        s += ds; t += dt;
+        if (Math.abs(ds) + Math.abs(dt) < 1e-9) break;
+      }
+      return [s, t];
+    };
+    return {
+      H: Hm, aspect: aspect * (stretchU / stretchV), stretchU, stretchV, curved: curvedTB || curvedLR,
+      map, invert, U, V, devT, devB, devL, devR, look,
+      // fast row helpers for the warp
+      cols(n) {
+        const u = new Float64Array(n), dt = new Float64Array(n), db = new Float64Array(n);
+        for (let j = 0; j < n; j++) { const s = (j + 0.5) / n; u[j] = U(s); dt[j] = look(devT, u[j]); db[j] = look(devB, u[j]); }
+        return { u, dt, db };
+      },
+      row(t) { const v = V(t); return { v, dl: look(devL, v), dr: look(devR, v) }; },
+    };
+  }
+
+  /* ------------------------------------------------------------------ output size */
+  function outlineSize(ol, W, H, maxLong, opts) {
+    opts = opts || {};
+    const M = mapper(ol, W, H, opts);
+    let ratio = M.aspect;
+    if (opts.snap && !M.curved && ol.kind !== 'book') ratio = E.snapAspect(ratio);
+    // how many photo pixels the page spans (longest side, including curves)
+    const len = (pts) => { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return s; };
+    let w = 0, hgt = 0;
+    for (let i = 0; i < 4; i++) {
+      const pts = ol.sides && ol.sides[i] ? ol.sides[i] : [ol.corners[i], ol.corners[(i + 1) % 4]];
+      const L = len(pts);
+      if (i % 2 === 0) w = Math.max(w, L); else hgt = Math.max(hgt, L);
+    }
+    const native = Math.max(w * M.stretchU, hgt * M.stretchV) * 1.04;
+    let long = Math.min(maxLong, native);
+    long = Math.max(long, Math.min(maxLong, opts.minLong || 1600));
+    return ratio >= 1 ? [Math.round(long), Math.round(long / ratio)] : [Math.round(long * ratio), Math.round(long)];
+  }
+
+  /* ------------------------------------------------------------------ high quality warp */
+  // Catmull-Rom (bicubic) weights, 256 sub-positions
+  const CR = new Float32Array(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 256, t2 = t * t, t3 = t2 * t;
+    CR[i * 4] = -0.5 * t3 + t2 - 0.5 * t;
+    CR[i * 4 + 1] = 1.5 * t3 - 2.5 * t2 + 1;
+    CR[i * 4 + 2] = -1.5 * t3 + 2 * t2 + 0.5 * t;
+    CR[i * 4 + 3] = 0.5 * t3 - 0.5 * t2;
+  }
+
+  // Warp the page out of the photo. img: RGBA photo; returns an RGBA image outW x outH.
+  // opts.scale: photo pixels per img pixel (when img is a reduced copy of the photo the outline is in)
+  function warpOutline(img, ol, outW, outH, opts) {
+    opts = opts || {};
+    outW = Math.max(1, Math.round(outW)); outH = Math.max(1, Math.round(outH));
+    const k = opts.scale || 1; // outline coordinates are in photo pixels; img may be smaller
+    const Wp = opts.W || img.width * k, Hp = opts.H || img.height * k;
+    const M = mapper(ol, Wp, Hp, opts);
+    const out = E.makeImage(outW, outH), d = out.data, s = img.data;
+    const w = img.width, h = img.height, wm = w - 1, hm = h - 1;
+    const Hm = M.H, [h0, h1, h2, h3, h4, h5, h6, h7, h8] = Hm;
+    const cols = M.cols(outW);
+    const bicubic = opts.bicubic !== false;
+    const ik = 1 / k;
+    let o = 0;
+    for (let y = 0; y < outH; y++) {
+      const r = M.row((y + 0.5) / outH);
+      const v = r.v, dl = r.dl, dr = r.dr;
+      for (let x = 0; x < outW; x++, o += 4) {
+        const u = cols.u[x];
+        const ru = u + (1 - u) * dl + u * dr;
+        const rv = v + (1 - v) * cols.dt[x] + v * cols.db[x];
+        const z = h6 * ru + h7 * rv + h8;
+        let sx = ((h0 * ru + h1 * rv + h2) / z) * ik - 0.5;
+        let sy = ((h3 * ru + h4 * rv + h5) / z) * ik - 0.5;
+        if (sx < 0) sx = 0; else if (sx > wm) sx = wm;
+        if (sy < 0) sy = 0; else if (sy > hm) sy = hm;
+        const ix = sx | 0, iy = sy | 0;
+        if (!bicubic || ix < 1 || iy < 1 || ix > w - 3 || iy > h - 3) {
+          const tx = sx - ix, ty = sy - iy, x1 = ix < wm ? ix + 1 : ix, y1 = iy < hm ? iy + 1 : iy;
+          const p00 = (iy * w + ix) << 2, p01 = (iy * w + x1) << 2, p10 = (y1 * w + ix) << 2, p11 = (y1 * w + x1) << 2;
+          const a = (1 - tx) * (1 - ty), b = tx * (1 - ty), c = (1 - tx) * ty, e = tx * ty;
+          d[o] = s[p00] * a + s[p01] * b + s[p10] * c + s[p11] * e;
+          d[o + 1] = s[p00 + 1] * a + s[p01 + 1] * b + s[p10 + 1] * c + s[p11 + 1] * e;
+          d[o + 2] = s[p00 + 2] * a + s[p01 + 2] * b + s[p10 + 2] * c + s[p11 + 2] * e;
+          d[o + 3] = 255;
+          continue;
+        }
+        const fx = ((sx - ix) * 256) << 2, fy = ((sy - iy) * 256) << 2;
+        const wx0 = CR[fx], wx1 = CR[fx + 1], wx2 = CR[fx + 2], wx3 = CR[fx + 3];
+        const wy0 = CR[fy], wy1 = CR[fy + 1], wy2 = CR[fy + 2], wy3 = CR[fy + 3];
+        const stride = w << 2;
+        const p0 = ((iy - 1) * w + ix - 1) << 2, p1 = p0 + stride, p2 = p1 + stride, p3 = p2 + stride;
+        d[o] = (s[p0] * wx0 + s[p0 + 4] * wx1 + s[p0 + 8] * wx2 + s[p0 + 12] * wx3) * wy0
+          + (s[p1] * wx0 + s[p1 + 4] * wx1 + s[p1 + 8] * wx2 + s[p1 + 12] * wx3) * wy1
+          + (s[p2] * wx0 + s[p2 + 4] * wx1 + s[p2 + 8] * wx2 + s[p2 + 12] * wx3) * wy2
+          + (s[p3] * wx0 + s[p3 + 4] * wx1 + s[p3 + 8] * wx2 + s[p3 + 12] * wx3) * wy3;
+        d[o + 1] = (s[p0 + 1] * wx0 + s[p0 + 5] * wx1 + s[p0 + 9] * wx2 + s[p0 + 13] * wx3) * wy0
+          + (s[p1 + 1] * wx0 + s[p1 + 5] * wx1 + s[p1 + 9] * wx2 + s[p1 + 13] * wx3) * wy1
+          + (s[p2 + 1] * wx0 + s[p2 + 5] * wx1 + s[p2 + 9] * wx2 + s[p2 + 13] * wx3) * wy2
+          + (s[p3 + 1] * wx0 + s[p3 + 5] * wx1 + s[p3 + 9] * wx2 + s[p3 + 13] * wx3) * wy3;
+        d[o + 2] = (s[p0 + 2] * wx0 + s[p0 + 6] * wx1 + s[p0 + 10] * wx2 + s[p0 + 14] * wx3) * wy0
+          + (s[p1 + 2] * wx0 + s[p1 + 6] * wx1 + s[p1 + 10] * wx2 + s[p1 + 14] * wx3) * wy1
+          + (s[p2 + 2] * wx0 + s[p2 + 6] * wx1 + s[p2 + 10] * wx2 + s[p2 + 14] * wx3) * wy2
+          + (s[p3 + 2] * wx0 + s[p3 + 6] * wx1 + s[p3 + 10] * wx2 + s[p3 + 14] * wx3) * wy3;
+        d[o + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ helpers for storage */
+  const normPts = (pts, W, H) => pts.map(([x, y]) => [x / W, y / H]);
+  const denormPts = (pts, W, H) => pts.map(([x, y]) => [x * W, y * H]);
+  function normalise(ol, W, H) {
+    return Object.assign({}, ol, { corners: normPts(ol.corners, W, H), sides: (ol.sides || []).map((s) => (s ? normPts(s, W, H) : null)) });
+  }
+  function denormalise(ol, W, H) {
+    return Object.assign({}, ol, { corners: denormPts(ol.corners, W, H), sides: (ol.sides || [null, null, null, null]).map((s) => (s ? denormPts(s, W, H) : null)) });
+  }
+  // a plain quad as an outline
+  const fromQuad = (q, kind) => ({ corners: q.map((p) => p.slice()), sides: [null, null, null, null], kind: kind || 'sheet' });
+
+  return { analyze, analyzeSheet, analyzeBook, traceSide, makeGuide, mapper, outlineSize, warpOutline, normalise, denormalise, fromQuad, insetOutline, sampleOutside, _paperRegion: paperRegion };
+}
+if (typeof module !== 'undefined') module.exports = FolioOutline;
+
 /* ---- processor.js ---- */
-/* Folio processing pipeline. FolioPipeline(engine) works with canvases (OffscreenCanvas in a worker,
-   regular canvases on the main thread). FolioProcessor runs it in a worker built from source text,
-   falling back to the main thread when workers or OffscreenCanvas are unavailable. */
-function FolioPipeline(E) {
+/* Folio processing pipeline. FolioPipeline(engine, outline) works with canvases (OffscreenCanvas in a
+   worker, regular canvases on the main thread). FolioProcessor runs it in a worker built from source
+   text, falling back to the main thread when workers or OffscreenCanvas are unavailable.
+   Photos are kept at full resolution (up to ~16 megapixels) and pages come out in HD. */
+function FolioPipeline(E, O) {
   'use strict';
   const hasOC = typeof OffscreenCanvas !== 'undefined';
+  const MAX_PIXELS = 16.6e6; // the largest canvas every phone browser accepts
   function canvas(w, h) {
     w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));
     if (hasOC) return new OffscreenCanvas(w, h);
@@ -1962,13 +3558,59 @@ function FolioPipeline(E) {
     c.width = w; c.height = h;
     return c;
   }
+  function freeCanvas(c) { try { c.width = 1; c.height = 1; } catch (e) { /* ignore */ } }
   function toBlob(c, type, q) {
     if (c.convertToBlob) return c.convertToBlob({ type, quality: q });
     return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), type, q));
   }
-  async function bitmap(src) {
+  async function bitmap(src, opts) {
     if (src && typeof src.close === 'function' && 'width' in src && !('size' in src)) return src;
-    return await createImageBitmap(src);
+    return opts ? await createImageBitmap(src, opts) : await createImageBitmap(src);
+  }
+
+  // Width and height from a JPEG's frame header (without decoding it).
+  async function jpegDims(blob) {
+    try {
+      if (!blob || (blob.type && !/jpe?g/i.test(blob.type))) return null;
+      const buf = new Uint8Array(await blob.slice(0, Math.min(blob.size, 262144)).arrayBuffer());
+      if (buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+      let i = 2;
+      while (i + 9 < buf.length) {
+        if (buf[i] !== 0xff) { i++; continue; }
+        const m = buf[i + 1];
+        if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+        const len = (buf[i + 2] << 8) | buf[i + 3];
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+          return { h: (buf[i + 5] << 8) | buf[i + 6], w: (buf[i + 7] << 8) | buf[i + 8] };
+        }
+        i += 2 + len;
+      }
+    } catch (e) { /* not a readable JPEG */ }
+    return null;
+  }
+
+  // Decode a photo to RGBA with at most maxPixels pixels (keeps memory and canvas limits safe).
+  async function decode(blob, maxPixels) {
+    maxPixels = maxPixels || MAX_PIXELS;
+    let bmp = null;
+    const dims = await jpegDims(blob);
+    if (dims && dims.w * dims.h > maxPixels * 1.03) {
+      const k = Math.sqrt(maxPixels / (dims.w * dims.h));
+      try { bmp = await bitmap(blob, { resizeWidth: Math.max(1, Math.round(dims.w * k)), resizeQuality: 'high' }); } catch (e) { bmp = null; }
+    }
+    if (!bmp) bmp = await bitmap(blob);
+    let W = bmp.width, H = bmp.height;
+    const k = Math.min(1, Math.sqrt(maxPixels / (W * H)));
+    W = Math.max(1, Math.round(W * k)); H = Math.max(1, Math.round(H * k));
+    const c = canvas(W, H);
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(bmp, 0, 0, W, H);
+    bmp.close && bmp.close();
+    const id = g.getImageData(0, 0, W, H);
+    freeCanvas(c);
+    return { width: W, height: H, data: id.data };
   }
   // Draw a bitmap so its long side is at most maxLong; return engine image (RGBA)
   function pixels(bmp, maxLong) {
@@ -1980,84 +3622,89 @@ function FolioPipeline(E) {
     g.imageSmoothingQuality = 'high';
     g.drawImage(bmp, 0, 0, w, h);
     const id = g.getImageData(0, 0, w, h);
+    freeCanvas(c);
     return { width: w, height: h, data: id.data };
   }
-  function toCanvas(img) {
+  // RGBA -> canvas, optionally rotated by 90/180/270
+  function toCanvas(img, deg) {
     const c = canvas(img.width, img.height);
     c.getContext('2d').putImageData(new ImageData(img.data, img.width, img.height), 0, 0);
-    return c;
+    deg = ((deg || 0) % 360 + 360) % 360;
+    if (!deg) return c;
+    const r = deg % 180 ? canvas(img.height, img.width) : canvas(img.width, img.height);
+    const g = r.getContext('2d');
+    g.translate(r.width / 2, r.height / 2);
+    g.rotate((deg * Math.PI) / 180);
+    g.drawImage(c, -img.width / 2, -img.height / 2);
+    freeCanvas(c);
+    return r;
   }
-  async function encode(img, q, maxLong) {
-    let c = toCanvas(img);
-    const k = maxLong ? Math.min(1, maxLong / Math.max(img.width, img.height)) : 1;
-    if (k < 1) {
-      const c2 = canvas(img.width * k, img.height * k);
-      const g = c2.getContext('2d');
-      g.imageSmoothingEnabled = true;
-      g.imageSmoothingQuality = 'high';
-      g.drawImage(c, 0, 0, c2.width, c2.height);
-      c = c2;
+  async function encodeFrom(c, q, maxLong) {
+    const k = maxLong ? Math.min(1, maxLong / Math.max(c.width, c.height)) : 1;
+    if (k >= 1) return toBlob(c, 'image/jpeg', q);
+    // step down in halves for smooth small versions
+    const tw = Math.max(1, Math.round(c.width * k)), th = Math.max(1, Math.round(c.height * k));
+    let src = c;
+    let w = c.width, h = c.height;
+    while (w / 2 >= tw * 1.05) {
+      const nw = Math.round(w / 2), nh = Math.round(h / 2);
+      const t = canvas(nw, nh), g = t.getContext('2d');
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.drawImage(src, 0, 0, nw, nh);
+      if (src !== c) freeCanvas(src);
+      src = t; w = nw; h = nh;
     }
-    return toBlob(c, 'image/jpeg', q);
+    const t = canvas(tw, th), g = t.getContext('2d');
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(src, 0, 0, t.width, t.height);
+    if (src !== c) freeCanvas(src);
+    const b = await toBlob(t, 'image/jpeg', q);
+    freeCanvas(t);
+    return b;
   }
   const norm = (q, w, h) => q.map(([x, y]) => [x / w, y / h]);
   const denorm = (q, w, h) => q.map(([x, y]) => [x * w, y * h]);
   const FULL = [[0, 0], [1, 0], [1, 1], [0, 1]];
 
-  // Keep the camera photo at a sensible size (long side <= maxLong), oriented upright.
-  async function ingest(blob, maxLong, rotate) {
-    const bmp = await bitmap(blob);
-    const W = bmp.width, H = bmp.height;
-    maxLong = maxLong || 2560;
+  // Keep the camera photo at full quality: the original file when it can be used as it is,
+  // otherwise upright and at most ~16 megapixels, saved at high JPEG quality.
+  async function ingest(blob, maxPixels, rotate) {
+    maxPixels = maxPixels || MAX_PIXELS;
     rotate = ((rotate || 0) % 360 + 360) % 360;
-    const k = Math.min(1, maxLong / Math.max(W, H));
-    if (k === 1 && !rotate && blob.type === 'image/jpeg' && blob.size < 6e6) {
+    const dims = await jpegDims(blob);
+    if (dims && !rotate && dims.w * dims.h <= maxPixels * 1.03 && blob.size < 20e6) {
+      // the decoder may still turn it upright (EXIF), so read the real size from a bitmap
+      const bmp = await bitmap(blob);
+      const out = { src: blob, w: bmp.width, h: bmp.height };
       bmp.close && bmp.close();
-      return { src: blob, w: W, h: H };
+      return out;
     }
-    const w = Math.round(W * k), h = Math.round(H * k);
-    const c = rotate % 180 ? canvas(h, w) : canvas(w, h);
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
-    g.translate(c.width / 2, c.height / 2);
-    g.rotate((rotate * Math.PI) / 180);
-    g.drawImage(bmp, -w / 2, -h / 2, w, h);
-    bmp.close && bmp.close();
-    const src = await toBlob(c, 'image/jpeg', 0.9);
-    return { src, w: c.width, h: c.height };
+    const img = await decode(blob, maxPixels);
+    const c = toCanvas(img, rotate);
+    const src = await toBlob(c, 'image/jpeg', 0.95);
+    const out = { src, w: c.width, h: c.height };
+    freeCanvas(c);
+    return out;
   }
 
-  // Find the page (or an open book) in a photo. Returns normalised quads.
+  // Find the page (or both pages of an open book). Returns normalised outlines.
+  // opts: {book, hint: normalised quad from the live camera}
   async function detect(blob, opts) {
     opts = opts || {};
-    const bmp = await bitmap(blob);
-    const small = pixels(bmp, 480);
-    let det = E.detectQuad(small, {});
-    let quad = FULL, found = false, score = 0;
-    if (det) {
-      found = true; score = det.score;
-      const mid = pixels(bmp, 1200);
-      const k = mid.width / small.width;
-      const refined = E.refineQuad(mid, det.quad.map(([x, y]) => [x * k, y * k]));
-      quad = norm(refined, mid.width, mid.height);
-    } else if (opts.hint) {
-      quad = opts.hint;
-    }
-    const out = { quad, found, score };
-    if (opts.book) {
-      // gutter from a small warp of the spread
-      const mid = pixels(bmp, 1000);
-      const qpx = denorm(quad, mid.width, mid.height);
-      const [ow, oh] = E.outputSize(qpx, mid.width, mid.height, 700, true);
-      const spread = E.warp(mid, qpx, ow, oh);
-      const g = E.findGutter(spread);
-      const halves = E.splitSpread(qpx, g.x);
-      out.gutter = g.x;
-      out.halves = halves.map((q) => norm(q, mid.width, mid.height));
-    }
-    bmp.close && bmp.close();
-    return out;
+    const img = await decode(blob);
+    return analyzeImage(img, opts);
+  }
+  function analyzeImage(img, opts) {
+    const W = img.width, H = img.height;
+    const res = O.analyze(img, { book: !!opts.book, hint: opts.hint ? denorm(opts.hint, W, H) : null });
+    const outlines = res.pages.map((ol) => O.normalise(ol, W, H));
+    return {
+      found: res.found,
+      outlines,
+      quad: res.quad ? norm(res.quad, W, H) : FULL,
+      halves: opts.book ? outlines.map((ol) => ol.corners) : null,
+      gutter: res.gutter || null,
+    };
   }
 
   function rotateMask(m, deg) {
@@ -2071,27 +3718,40 @@ function FolioPipeline(E) {
     return { w: r.width, h: r.height, mask };
   }
 
-  // Warp + clean + filter one page.
-  // p: {quad, filter, darken, fingers, rotation, book:{side}, maxLong, snap, quality}
-  async function process(srcBlob, p) {
-    const bmp = await bitmap(srcBlob);
-    const W = bmp.width, H = bmp.height;
-    const qpx = denorm(p.quad || FULL, W, H);
-    const [ow, oh] = E.outputSize(qpx, W, H, p.maxLong || 2400, p.snap !== false);
-    let quadLong = 0;
-    for (let i = 0; i < 4; i++) {
-      const a = qpx[i], b = qpx[(i + 1) % 4];
-      quadLong = Math.max(quadLong, Math.hypot(b[0] - a[0], b[1] - a[1]));
-    }
-    const k = Math.min(1, (Math.max(ow, oh) * 1.3) / Math.max(1, quadLong));
-    const src = pixels(bmp, Math.max(W, H) * k);
-    bmp.close && bmp.close();
-    const ks = src.width / W;
-    let page = E.warp(src, qpx.map(([x, y]) => [x * ks, y * ks]), ow, oh);
+  // the outline a page record describes (new records: outline; older ones: a plain quad)
+  function outlineOf(p, W, H) {
+    if (p.outline) return O.denormalise(p.outline, W, H);
+    return O.fromQuad(denorm(p.quad || FULL, W, H), p.book ? 'book' : 'sheet');
+  }
+
+  // Cut the page out of the photo, flattened, at native resolution (capped at p.maxLong).
+  function cutPage(img, p) {
+    const W = img.width, H = img.height;
+    const ol = outlineOf(p, W, H);
+    if (p.book && p.book.side) ol.book = { side: p.book.side };
+    const [ow, oh] = O.outlineSize(ol, W, H, p.maxLong || 4200, { snap: p.snap !== false, minLong: Math.min(p.maxLong || 4200, 1600) });
+    const page = O.warpOutline(img, ol, ow, oh, { flatten: p.flatten !== false });
+    // what the page lies on, just outside each side (to recognise bits of it left inside the borders)
+    if (p.fingers !== false) page.outside = O.sampleOutside(img, ol, { skip: spineSkip(p) });
+    return page;
+  }
+  // the side of a book page that runs along the spine has no desk next to it
+  function spineSkip(p) {
+    const side = p.book && p.book.side;
+    return [false, side === 'left', false, side === 'right'];
+  }
+  function spineOf(p) {
+    const side = p.book && p.book.side;
+    return side === 'left' ? 'right' : side === 'right' ? 'left' : null;
+  }
+
+  // Clean up and apply the look to a cut-out page, then encode it (HD, view size and thumbnail).
+  async function finishPage(page, p) {
     const side = p.book && p.book.side;
     if (side) E.liftGutter(page, side === 'left' ? 'right' : 'left');
     const blur = E.blurScore(page);
     const bg = E.estimateBackground(page);
+    if (page.outside) E.fillIntrusions(page, bg, page.outside, { spine: spineOf(p) });
     let fm = null;
     if (p.fingers !== false) {
       const all = { left: true, right: true, top: true, bottom: true };
@@ -2099,50 +3759,114 @@ function FolioPipeline(E) {
         : side === 'right' ? { right: true, top: true, bottom: true, left: false } : all;
       fm = E.detectFingers(page, bg, { edges, cleanSides: all });
     }
-    const res = E.applyFilter(page, bg, { filter: p.filter || 'auto', darken: !!p.darken, mask: fm });
+    const res = E.applyFilter(page, bg, { filter: p.filter || 'auto', darken: !!p.darken, mask: fm, inPlace: true });
+    if (p.fingers !== false) E.cleanBorder(res.image, {});
+    const pw = page.width, ph = page.height;
+    const c = toCanvas(res.image, p.rotation || 0);
     page = null;
-    const out = E.rotate(res.image, p.rotation || 0);
-    const outBlob = await encode(out, p.quality || 0.9);
-    const thumb = await encode(out, 0.8, 440);
+    const out = await toBlob(c, 'image/jpeg', p.quality || 0.92);
+    const view = Math.max(c.width, c.height) > 2200 ? await encodeFrom(c, 0.86, 2000) : null;
+    const thumb = await encodeFrom(c, 0.8, 440);
+    const w = c.width, h = c.height;
+    freeCanvas(c);
     const mask = fm && fm.any ? rotateMask({ w: fm.w, h: fm.h, mask: fm.mask }, p.rotation || 0) : null;
     return {
-      out: outBlob, thumb, w: out.width, h: out.height,
+      out, view, thumb, w, h, srcW: pw, srcH: ph,
       fingers: fm ? fm.count : 0, edgeCleaned: fm ? fm.edgeCleaned : false, mask,
       blur: { width: blur.width, blurry: blur.blurry && blur.text },
       paper: res.paper.map((v) => Math.round(v)),
     };
   }
 
+  // Run fn, and if the phone runs short of memory, try again a size down.
+  async function withFallback(fn) {
+    try { return await fn(MAX_PIXELS, 1); } catch (e) {
+      if (!/memory|allocation|range|size|canvas|out of/i.test(String(e && (e.message || e)))) throw e;
+      return fn(8e6, 0.6);
+    }
+  }
+
+  // One page from a photo. p: {outline|quad, filter, darken, fingers, rotation, book:{side}, maxLong, snap, quality}
+  async function process(srcBlob, p) {
+    return withFallback(async (maxPixels, shrink) => {
+      let img = await decode(srcBlob, maxPixels);
+      const page = cutPage(img, Object.assign({}, p, { maxLong: Math.round((p.maxLong || 4200) * shrink) }));
+      img = null;
+      return finishPage(page, p);
+    });
+  }
+  // Several pages from one photo (both pages of a book): decode once.
+  async function processMany(srcBlob, ps) {
+    return withFallback(async (maxPixels, shrink) => {
+      let img = await decode(srcBlob, maxPixels);
+      const pages = ps.map((p) => cutPage(img, Object.assign({}, p, { maxLong: Math.round((p.maxLong || 4200) * shrink) })));
+      img = null;
+      const out = [];
+      for (let i = 0; i < pages.length; i++) { out.push(await finishPage(pages[i], ps[i])); pages[i] = null; }
+      return out;
+    });
+  }
+  // A new photo: find the page(s) and make them, decoding the photo once.
+  // opts: {book, hint, pages: [page params without outline]}
+  async function capture(srcBlob, opts) {
+    return withFallback(async (maxPixels, shrink) => {
+      let img = await decode(srcBlob, maxPixels);
+      const det = analyzeImage(img, opts);
+      const ps = (opts.pages || [{}]).map((p, i) => Object.assign({}, p, { outline: det.outlines[i] || det.outlines[0], maxLong: Math.round((p.maxLong || 4200) * shrink) }));
+      const pages = ps.map((p) => cutPage(img, p));
+      img = null;
+      const results = [];
+      for (let i = 0; i < pages.length; i++) { results.push(await finishPage(pages[i], ps[i])); pages[i] = null; }
+      return { found: det.found, outlines: det.outlines, quad: det.quad, results };
+    });
+  }
+
   // Small previews of each look for the filter picker.
   async function previews(srcBlob, p) {
     const bmp = await bitmap(srcBlob);
     const W = bmp.width, H = bmp.height;
-    const qpx = denorm(p.quad || FULL, W, H);
-    const src = pixels(bmp, 900);
+    const src = pixels(bmp, 1000);
     bmp.close && bmp.close();
-    const ks = src.width / W;
-    const q = qpx.map(([x, y]) => [x * ks, y * ks]);
-    const [ow, oh] = E.outputSize(q, src.width, src.height, 360, p.snap !== false);
-    const page = E.warp(src, q, ow, oh);
+    const ol = outlineOf(p, W, H);
+    const [ow, oh] = O.outlineSize(ol, W, H, 360, { snap: p.snap !== false, minLong: 360 });
+    const page = O.warpOutline(src, ol, ow, oh, { scale: W / src.width, W, H, bicubic: false });
     if (p.book && p.book.side) E.liftGutter(page, p.book.side === 'left' ? 'right' : 'left');
     const bg = E.estimateBackground(page);
+    if (p.fingers !== false) E.fillIntrusions(page, bg, O.sampleOutside(src, ol, { scale: W / src.width, skip: spineSkip(p) }), { spine: spineOf(p) });
     const fm = p.fingers !== false ? E.detectFingers(page, bg, {}) : null;
     const out = {};
     for (const f of ['auto', 'grey', 'bw', 'original']) {
       const r = E.applyFilter(page, bg, { filter: f, darken: !!p.darken, mask: fm });
-      out[f] = await encode(E.rotate(r.image, p.rotation || 0), 0.8);
+      const c = toCanvas(r.image, p.rotation || 0);
+      out[f] = await toBlob(c, 'image/jpeg', 0.8);
+      freeCanvas(c);
     }
     return out;
   }
 
   // Live camera frame (RGBA buffer) -> page quad in that frame, normalised.
-  let fpCache = null;
-  function live(buf, w, h, prev, wantPrint) {
+  function live(buf, w, h, prev, wantPrint, book) {
     const img = { width: w, height: h, data: new Uint8ClampedArray(buf) };
-    const det = E.detectQuad(img, { live: true, prev: prev ? denorm(prev, w, h) : null });
+    const det = E.detectQuad(img, { live: true, prev: prev ? denorm(prev, w, h) : null, book: !!book });
     const res = { quad: det ? norm(det.quad, w, h) : null, score: det ? det.score : 0 };
     if (det && wantPrint) res.print = Array.from(E.fingerprint(img, det.quad));
+    if (det) res.sharp = sharpness(img, det.quad);
     return res;
+  }
+  // focus measure inside the page area of a small frame (mean absolute Laplacian of luminance)
+  function sharpness(img, quad) {
+    const w = img.width, h = img.height, d = img.data;
+    let x0 = w, y0 = h, x1 = 0, y1 = 0;
+    for (const [x, y] of quad) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const mx = (x1 - x0) * 0.2, my = (y1 - y0) * 0.2;
+    x0 = Math.max(1, Math.round(x0 + mx)); x1 = Math.min(w - 2, Math.round(x1 - mx));
+    y0 = Math.max(1, Math.round(y0 + my)); y1 = Math.min(h - 2, Math.round(y1 - my));
+    let s = 0, n = 0;
+    const L = (x, y) => { const p = (y * w + x) * 4; return 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]; };
+    for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) {
+      s += Math.abs(4 * L(x, y) - L(x - 1, y) - L(x + 1, y) - L(x, y - 1) - L(x, y + 1)); n++;
+    }
+    return n ? s / n : 0;
   }
   function printDiff(a, b) { return E.fingerprintDiff(Float32Array.from(a), Float32Array.from(b)); }
 
@@ -2173,69 +3897,79 @@ function FolioPipeline(E) {
     return { rotate: best, pw, ph };
   }
 
-  return { ingest, detect, process, previews, live, printDiff, alignPhoto };
+  return { ingest, detect, process, processMany, capture, previews, live, printDiff, alignPhoto };
 }
 
 const FolioProcessor = (() => {
-  let worker = null, ready = null, seq = 0;
-  const pending = new Map();
+  // Two workers: one keeps the live camera outline running while the other does the heavy HD work,
+  // so the viewfinder never freezes while a page is being processed.
+  const LIVE = new Set(['live', 'printDiff', 'alignPhoto']);
   let main = null;
   function local() {
-    if (!main) main = FolioPipeline(FolioEngine());
+    if (!main) { const E = FolioEngine(); main = FolioPipeline(E, FolioOutline(E)); }
     return main;
   }
-  function start() {
-    if (ready) return ready;
-    ready = new Promise((resolve) => {
-      try {
-        const src = `${FolioEngine.toString()}\n${FolioPipeline.toString()}\n` +
-          `const P = FolioPipeline(FolioEngine());\n` +
-          `self.onmessage = async (e) => { const { id, cmd, args } = e.data;\n` +
-          `  if (cmd === 'ping') { self.postMessage({ id, ok: true, r: { oc: typeof OffscreenCanvas !== 'undefined' && !!new OffscreenCanvas(2,2).getContext('2d'), bmp: typeof createImageBitmap === 'function' } }); return; }\n` +
-          `  try { const r = await P[cmd](...args); self.postMessage({ id, ok: true, r }); }\n` +
-          `  catch (err) { self.postMessage({ id, ok: false, e: String((err && err.message) || err) }); } };`;
-        const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
-        worker = new Worker(url);
-        worker.onmessage = (e) => {
-          const { id, ok, r, e: err } = e.data;
-          const p = pending.get(id);
-          if (!p) return;
-          pending.delete(id);
-          ok ? p.resolve(r) : p.reject(new Error(err));
-        };
-        worker.onerror = () => { resolve(false); };
-        const id = ++seq;
-        const t = setTimeout(() => { pending.delete(id); resolve(false); }, 4000);
-        pending.set(id, {
-          resolve: (r) => { clearTimeout(t); resolve(!!(r && r.oc && r.bmp)); },
-          reject: () => { clearTimeout(t); resolve(false); },
-        });
-        worker.postMessage({ id, cmd: 'ping', args: [] });
-      } catch (e) {
-        resolve(false);
-      }
-    }).then((ok) => {
-      if (!ok && worker) { try { worker.terminate(); } catch (e) { /* ignore */ } worker = null; }
-      return ok;
-    });
-    return ready;
+  function makeWorker() {
+    const w = { worker: null, ready: null, seq: 0, pending: new Map() };
+    w.start = () => {
+      if (w.ready) return w.ready;
+      w.ready = new Promise((resolve) => {
+        try {
+          const src = `${FolioEngine.toString()}\n${FolioOutline.toString()}\n${FolioPipeline.toString()}\n` +
+            `const E = FolioEngine(); const P = FolioPipeline(E, FolioOutline(E));\n` +
+            `self.onmessage = async (e) => { const { id, cmd, args } = e.data;\n` +
+            `  if (cmd === 'ping') { self.postMessage({ id, ok: true, r: { oc: typeof OffscreenCanvas !== 'undefined' && !!new OffscreenCanvas(2,2).getContext('2d'), bmp: typeof createImageBitmap === 'function' } }); return; }\n` +
+            `  try { const r = await P[cmd](...args); self.postMessage({ id, ok: true, r }); }\n` +
+            `  catch (err) { self.postMessage({ id, ok: false, e: String((err && err.message) || err) }); } };`;
+          const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+          w.worker = new Worker(url);
+          w.worker.onmessage = (e) => {
+            const { id, ok, r, e: err } = e.data;
+            const p = w.pending.get(id);
+            if (!p) return;
+            w.pending.delete(id);
+            ok ? p.resolve(r) : p.reject(new Error(err));
+          };
+          w.worker.onerror = () => { resolve(false); };
+          const id = ++w.seq;
+          const t = setTimeout(() => { w.pending.delete(id); resolve(false); }, 4000);
+          w.pending.set(id, {
+            resolve: (r) => { clearTimeout(t); resolve(!!(r && r.oc && r.bmp)); },
+            reject: () => { clearTimeout(t); resolve(false); },
+          });
+          w.worker.postMessage({ id, cmd: 'ping', args: [] });
+        } catch (e) {
+          resolve(false);
+        }
+      }).then((ok) => {
+        if (!ok && w.worker) { try { w.worker.terminate(); } catch (e) { /* ignore */ } w.worker = null; }
+        return ok;
+      });
+      return w.ready;
+    };
+    w.call = async (cmd, args, transfer) => {
+      const ok = await w.start();
+      if (!ok) return local()[cmd](...args);
+      return new Promise((resolve, reject) => {
+        const id = ++w.seq;
+        w.pending.set(id, { resolve, reject });
+        w.worker.postMessage({ id, cmd, args }, transfer || []);
+      });
+    };
+    return w;
   }
-  async function call(cmd, args, transfer) {
-    const ok = await start();
-    if (!ok) return local()[cmd](...args);
-    return new Promise((resolve, reject) => {
-      const id = ++seq;
-      pending.set(id, { resolve, reject });
-      worker.postMessage({ id, cmd, args }, transfer || []);
-    });
-  }
+  const liveW = makeWorker(), heavyW = makeWorker();
+  const call = (cmd, args, transfer) => (LIVE.has(cmd) ? liveW : heavyW).call(cmd, args, transfer);
+  const start = () => Promise.all([liveW.start(), heavyW.start()]).then((r) => r[0] && r[1]);
   return {
     start,
-    ingest: (blob, maxLong, rotate) => call('ingest', [blob, maxLong, rotate]),
+    ingest: (blob, maxPixels, rotate) => call('ingest', [blob, maxPixels, rotate]),
     detect: (blob, opts) => call('detect', [blob, opts]),
     process: (blob, p) => call('process', [blob, p]),
+    processMany: (blob, ps) => call('processMany', [blob, ps]),
+    capture: (blob, opts) => call('capture', [blob, opts]),
     previews: (blob, p) => call('previews', [blob, p]),
-    live: (buf, w, h, prev, wantPrint) => call('live', [buf, w, h, prev, wantPrint], [buf]),
+    live: (buf, w, h, prev, wantPrint, book) => call('live', [buf, w, h, prev, wantPrint, book], [buf]),
     printDiff: (a, b) => call('printDiff', [a, b]),
     alignPhoto: (blob, buf, w, h) => call('alignPhoto', [blob, buf, w, h], [buf]),
     usesWorker: async () => !!(await start()),
@@ -2570,6 +4304,7 @@ const FolioIcons = (() => {
     book: '<path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z"/><path d="M12 6.5v13"/>',
     page: '<path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>',
     search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    zoom: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M11 8v6M8 11h6"/>',
     settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>',
     more: '<circle cx="12" cy="5.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.4" fill="currentColor" stroke="none"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
@@ -2693,17 +4428,28 @@ const Folio = {};
   /* ---------------------------------------------------------------- settings */
   F.DEFAULTS = {
     autoCapture: true, filter: 'auto', darken: false, fingers: true, snap: true, haptics: true, sound: true,
-    maxQuality: true, pageSize: 'a4', quality: 'standard', searchable: false, theme: 'system', dateInName: true,
+    maxQuality: true, scanQuality: 'hd', flatten: true, pageSize: 'a4', quality: 'hd', searchable: false, theme: 'system', dateInName: true,
+    v: 2,
     classes: [], subjects: ['Maths', 'English', 'Global Perspectives'],
     kinds: ['Worksheet', 'Test', 'Homework', 'Notes', 'Past paper', 'Mark scheme', 'Admin'],
     folders: {}, // remembered cloud folders: { 'gdrive:Maths': {...}, 'onedrive:*': {...} }
   };
   F.settings = Object.assign({}, F.DEFAULTS);
   F.loadSettings = async () => {
-    const s = await FolioStore.kvGet('settings', {});
-    F.settings = Object.assign({}, F.DEFAULTS, s || {});
+    const s = (await FolioStore.kvGet('settings', {})) || {};
+    F.settings = Object.assign({}, F.DEFAULTS, s);
+    // version 2 scans and shares in HD (the stored settings say which version saved them)
+    if (!(s.v >= 2)) {
+      // someone who used the first version: tell them once what changed
+      if (Object.keys(s).length) F.whatsNew = 'Folio now scans in HD, with exact edge-to-edge cropping';
+      Object.assign(F.settings, { v: 2, scanQuality: 'hd', quality: 'hd', maxQuality: true });
+      F.saveSettings();
+    }
     F.applyTheme();
   };
+  // longest side of a finished page, by scan quality: HD keeps all the detail the camera captured
+  // (up to about 360 dpi on an A4 page)
+  F.pageLong = () => (F.settings.scanQuality === 'standard' ? 2400 : 4200);
   F.saveSettings = () => FolioStore.kvSet('settings', F.settings);
   F.applyTheme = () => {
     const t = F.settings.theme;
@@ -2828,8 +4574,13 @@ const Folio = {};
   };
 
   F.pageParams = (p) => ({
-    quad: p.quad, filter: p.filter, darken: !!p.darken, fingers: p.fingers !== false, rotation: p.rotation || 0,
-    book: p.book || null, snap: F.settings.snap !== false, maxLong: 2400,
+    outline: p.outline || null, quad: p.quad, filter: p.filter, darken: !!p.darken, fingers: p.fingers !== false,
+    rotation: p.rotation || 0, book: p.book || null, snap: F.settings.snap !== false, maxLong: F.pageLong(),
+    flatten: p.flatten !== false && F.settings.flatten !== false, quality: 0.92,
+  });
+  const applyResult = (page, r) => Object.assign(page, {
+    out: r.out, view: r.view || null, thumb: r.thumb, w: r.w, h: r.h, fingerCount: r.fingers, edgeCleaned: r.edgeCleaned,
+    mask: r.mask, blur: r.blur, paper: r.paper, status: 'ready', error: null, rev: (page.rev || 0) + 1,
   });
 
   // Run the engine on one page record and store the result.
@@ -2837,10 +4588,7 @@ const Folio = {};
     const src = await F.db.source(page.srcId);
     if (!src) throw new Error('Original photo missing');
     const r = await FolioProcessor.process(src.blob, F.pageParams(page));
-    Object.assign(page, {
-      out: r.out, thumb: r.thumb, w: r.w, h: r.h, fingerCount: r.fingers, edgeCleaned: r.edgeCleaned,
-      mask: r.mask, blur: r.blur, paper: r.paper, status: 'ready', error: null, rev: (page.rev || 0) + 1,
-    });
+    applyResult(page, r);
     await F.db.savePage(page);
     return page;
   };
@@ -2882,16 +4630,19 @@ const Folio = {};
     await F.db.saveDoc(doc);
     const work = F.queue.push(async () => {
       try {
-        const ing = await FolioProcessor.ingest(blob, 2560, opts.rotate || 0);
+        const ing = await FolioProcessor.ingest(blob, 0, opts.rotate || 0);
         const srcId = S.uid();
         await S.put('sources', { id: srcId, blob: ing.src, w: ing.w, h: ing.h });
-        const det = await FolioProcessor.detect(ing.src, { book, hint: opts.hint });
+        // find the page(s) and make them in one go (the photo is decoded once)
+        const cap = await FolioProcessor.capture(ing.src, { book, hint: opts.hint, pages: pages.map((p) => F.pageParams(p)) });
         for (let i = 0; i < pages.length; i++) {
           const p = pages[i];
           p.srcId = srcId;
-          p.found = det.found;
-          p.quad = book && det.halves ? det.halves[i] : det.quad;
-          await F.processPage(p);
+          p.found = cap.found;
+          p.outline = cap.outlines[i] || cap.outlines[0];
+          p.quad = p.outline.corners;
+          applyResult(p, cap.results[i]);
+          await F.db.savePage(p);
         }
         F.emit('captured', { doc, pages });
       } catch (e) {
@@ -3428,12 +5179,12 @@ const Folio = {};
     opts = opts || {};
     let mode = opts.mode || 'page';
     let root, video, overlay, poly, cornerDots = [], guide, hintEl, stackBtn, doneBtn, ring, torchBtn, autoBtn, modeBtns = {};
-    let stream = null, track = null, imageCapture = null, raf = 0, wakeLock = null;
+    let stream = null, track = null, imageCapture = null, photoSettings = null, raf = 0, wakeLock = null, hdChip = null;
     let doc = null, shots = 0, pageCount = 0, lastThumb = null, torchOn = false, alive = true, capturing = false;
     const small = document.createElement('canvas');
     const sctx = small.getContext('2d', { willReadFrequently: true });
     // detection state
-    const det = { busy: false, last: 0, smooth: null, seen: 0, lastSeen: 0, hist: [] };
+    const det = { busy: false, last: 0, smooth: null, seen: 0, lastSeen: 0, hist: [], sharp: [] };
     // auto-capture state
     const auto = { armed: true, stableAt: 0, print: null, quadAtShot: null, lostAt: 0 };
     const COUNTDOWN = 750;
@@ -3462,6 +5213,7 @@ const Folio = {};
       } }, F.icon('images'));
       torchBtn = h('button', { class: 'ibtn', 'aria-label': 'Torch', 'aria-pressed': 'false', hidden: true, onclick: toggleTorch }, F.icon('torch'));
       autoBtn = h('button', { class: 'ibtn', 'aria-label': 'Auto-capture', 'aria-pressed': String(!!F.settings.autoCapture), onclick: toggleAuto }, F.icon('auto'));
+      hdChip = h('button', { class: 'hd-chip', hidden: true, 'aria-label': 'Scanning in HD', onclick: () => F.toast(hdChip.dataset.msg || 'Scanning in HD') }, 'HD');
       for (const [m, label, ic] of [['page', 'Page', 'page'], ['book', 'Book', 'book']]) {
         modeBtns[m] = h('button', { 'aria-pressed': String(mode === m), onclick: () => setMode(m) }, F.icon(ic, 'sm'), label);
       }
@@ -3471,7 +5223,7 @@ const Folio = {};
         h('div', { class: 'stage' }, video, overlay, flash),
         h('div', { class: 'top' },
           h('button', { class: 'ibtn', 'aria-label': 'Close camera', onclick: () => { if (shots) finish(); else F.nav.back(); } }, F.icon('close')),
-          h('div', { class: 'spacer' }), modes, h('div', { class: 'spacer' }), torchBtn, autoBtn),
+          h('div', { class: 'spacer' }), modes, h('div', { class: 'spacer' }), hdChip, torchBtn, autoBtn),
         hintEl,
         h('div', { class: 'bottom' },
           h('div', { style: { justifySelf: 'start', display: 'flex', gap: '10px', alignItems: 'center' } }, stackBtn, galleryBtn),
@@ -3490,20 +5242,49 @@ const Folio = {};
 
     async function start() {
       try {
+        // With ImageCapture the photo is taken by the camera's still pipeline at full resolution, so a
+        // light preview stream is enough. Without it, photos are frames from the stream: ask for 4K.
+        const still = 'ImageCapture' in window && F.settings.maxQuality !== false;
         const constraints = {
           audio: false,
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 }, height: { ideal: 1440 },
-            aspectRatio: { ideal: 4 / 3 },
-          },
+          video: still
+            ? { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4 / 3 } }
+            : { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 }, aspectRatio: { ideal: 4 / 3 } },
         };
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        try { stream = await navigator.mediaDevices.getUserMedia(constraints); } catch (e) {
+          if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
+        }
         if (!alive) { stopStream(); return; }
         track = stream.getVideoTracks()[0];
         video.srcObject = stream;
         await video.play().catch(() => {});
         try { if ('ImageCapture' in window) imageCapture = new ImageCapture(track); } catch (e) { imageCapture = null; }
+        photoSettings = null;
+        let mp = 0;
+        if (imageCapture) {
+          try {
+            const pc = await imageCapture.getPhotoCapabilities();
+            const iw = pc && pc.imageWidth, ih = pc && pc.imageHeight;
+            if (iw && ih && iw.max && ih.max) {
+              // the largest photo, kept to about 20 megapixels (bigger only costs memory)
+              let w = iw.max, hh = ih.max;
+              const lim = 20e6;
+              if (w * hh > lim) {
+                const k = Math.sqrt(lim / (w * hh)), st = iw.step || 1;
+                w = Math.max(iw.min || 1, Math.round((w * k) / st) * st);
+                hh = Math.max(ih.min || 1, Math.round((hh * k) / (ih.step || 1)) * (ih.step || 1));
+              }
+              photoSettings = { imageWidth: w, imageHeight: hh };
+              mp = (w * hh) / 1e6;
+            }
+          } catch (e) { photoSettings = null; }
+        }
+        if (!mp) mp = ((video.videoWidth || 0) * (video.videoHeight || 0)) / 1e6;
+        if (mp >= 7.5 || (imageCapture && !photoSettings)) {
+          hdChip.hidden = false;
+          hdChip.dataset.msg = mp ? `Scanning in HD: ${Math.round(mp)} megapixel photos` : 'Scanning in HD: full camera resolution';
+        }
         const caps = (track.getCapabilities && track.getCapabilities()) || {};
         torchBtn.hidden = !caps.torch;
         try {
@@ -3519,7 +5300,7 @@ const Folio = {};
     function stopStream() {
       cancelAnimationFrame(raf);
       if (stream) stream.getTracks().forEach((t) => t.stop());
-      stream = null; track = null; imageCapture = null;
+      stream = null; track = null; imageCapture = null; photoSettings = null;
       if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     }
     function stop() { alive = false; stopStream(); }
@@ -3579,7 +5360,7 @@ const Folio = {};
       const id = sctx.getImageData(0, 0, w, hh);
       det.busy = true;
       const wantPrint = !auto.armed;
-      FolioProcessor.live(id.data.buffer, w, hh, det.smooth, wantPrint).then((r) => {
+      FolioProcessor.live(id.data.buffer, w, hh, det.smooth, wantPrint, mode === 'book').then((r) => {
         det.busy = false;
         if (alive) onDetect(r, performance.now());
       }).catch(() => { det.busy = false; });
@@ -3596,6 +5377,10 @@ const Folio = {};
         det.lastSeen = now;
         det.hist.push({ t: now, q: r.quad });
         while (det.hist.length && now - det.hist[0].t > 1200) det.hist.shift();
+        if (r.sharp != null) {
+          det.sharp.push({ t: now, v: r.sharp });
+          while (det.sharp.length && now - det.sharp[0].t > 1600) det.sharp.shift();
+        }
         if (!auto.armed) {
           // re-arm once the page has changed (turned) or moved away
           let moved = 0;
@@ -3606,7 +5391,7 @@ const Folio = {};
           } else if (r.print && !auto.print) auto.print = r.print;
         }
       } else {
-        if (now - det.lastSeen > 450) { det.smooth = null; det.seen = 0; det.hist = []; }
+        if (now - det.lastSeen > 450) { det.smooth = null; det.seen = 0; det.hist = []; det.sharp = []; }
         if (!auto.armed && now - det.lastSeen > 700) rearm();
       }
       drawOverlay();
@@ -3619,6 +5404,17 @@ const Folio = {};
       let worst = 0;
       for (const e of hst) for (let i = 0; i < 4; i++) worst = Math.max(worst, Math.hypot(e.q[i][0] - ref[i][0], e.q[i][1] - ref[i][1]));
       return worst < 0.018;
+    }
+    // in focus: the latest frames are about as sharp as the sharpest one lately (autofocus has settled)
+    function focused(now) {
+      const sh = det.sharp;
+      if (sh.length < 3) return true;
+      let best = 0;
+      for (const e of sh) best = Math.max(best, e.v);
+      const recent = sh.filter((e) => now - e.t <= 300);
+      if (!recent.length || best <= 0) return true;
+      const cur = recent.reduce((a, e) => a + e.v, 0) / recent.length;
+      return cur >= best * 0.8;
     }
     function autoTick(now) {
       if (capturing) return;
@@ -3634,9 +5430,9 @@ const Folio = {};
       if (stable(now)) {
         if (!auto.stableAt) auto.stableAt = now;
         const p = (now - auto.stableAt) / COUNTDOWN;
-        setRing(p);
-        setHint('Hold steady…');
-        if (p >= 1) capture(true);
+        setRing(Math.min(p, 0.98));
+        setHint(p >= 1 && !focused(now) ? 'Focusing…' : 'Hold steady…');
+        if (p >= 1 && (focused(now) || p >= 2.6)) capture(true);
       } else {
         auto.stableAt = 0; setRing(0);
         setHint('Hold still');
@@ -3676,7 +5472,7 @@ const Folio = {};
       const c = document.createElement('canvas');
       c.width = video.videoWidth; c.height = video.videoHeight;
       c.getContext('2d').drawImage(video, 0, 0);
-      return F.canvasBlob(c, 'image/jpeg', 0.93);
+      return F.canvasBlob(c, 'image/jpeg', 0.95);
     }
     const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
@@ -3696,8 +5492,9 @@ const Folio = {};
       flyToStack(thumbUrl, quad);
       let blob = null, rotate = 0, usedPhoto = false;
       try {
-        if (imageCapture && F.settings.maxQuality) {
-          blob = await withTimeout(imageCapture.takePhoto(torchOn ? { fillLightMode: 'flash' } : {}), 3500);
+        if (imageCapture && F.settings.maxQuality !== false) {
+          const ps = Object.assign({}, photoSettings || {}, torchOn ? { fillLightMode: 'flash' } : {});
+          blob = await withTimeout(imageCapture.takePhoto(ps).catch(() => imageCapture.takePhoto()), 7000);
           const al = await FolioProcessor.alignPhoto(blob, frameBuf, fw, fh);
           rotate = al.rotate;
           usedPhoto = true;
@@ -3782,7 +5579,7 @@ const Folio = {};
   // What the viewer shows: the processed page, with mark-up drawn in when there is any
   const composed = new Map();
   F.displayURL = async (p) => {
-    if (!p.ann || !p.ann.length) return F.urlFor('o:' + p.id, p.out);
+    if (!p.ann || !p.ann.length) return F.urlFor('v:' + p.id, p.view || p.out);
     const key = `${p.id}:${p.rev || 0}:${p.annRev || 0}`;
     if (composed.has(key)) return composed.get(key);
     const c = await F.renderPage(p, 1800);
@@ -3880,7 +5677,16 @@ const Folio = {};
         return;
       }
       const img = h('img', { class: 'sheet-img', alt: `Page ${i + 1}`, decoding: 'async' });
-      const wrap = h('div', { class: 'sheet-wrap' }, img);
+      const wrap = h('div', { class: 'sheet-wrap', title: 'Tap to zoom in' }, img);
+      // tap (not a swipe) to look at the page in full detail
+      let downAt = null;
+      wrap.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+      wrap.addEventListener('pointerup', (e) => {
+        if (!downAt) return;
+        const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y), dt = Date.now() - downAt.t;
+        downAt = null;
+        if (moved < 10 && dt < 450) F.openZoom(pages, pages.findIndex((q) => q.id === p.id));
+      });
       let maskImg = null;
       if (p.mask) { maskImg = h('img', { class: 'mask', alt: '', src: F.maskURL(p) }); wrap.append(maskImg); }
       const badges = h('div', { class: 'badges' });
@@ -3890,7 +5696,8 @@ const Folio = {};
           F.toast('Highlighted: what Folio cleaned away', { label: 'Put back', fn: () => { p.fingers = false; F.reprocess(p); } }, 4500);
         } }, F.icon('hand', 'sm'), `${p.fingerCount} finger${p.fingerCount === 1 ? '' : 's'} removed`));
       }
-      if (p.found === false) badges.append(h('button', { class: 'badge warn', onclick: () => F.nav.push(F.CropScreen(p)) }, F.icon('crop', 'sm'), 'Check the corners'));
+      const unsure = p.found === false || (p.outline && p.outline.quality != null && p.outline.quality < 0.45);
+      if (unsure) badges.append(h('button', { class: 'badge warn', onclick: () => F.nav.push(F.CropScreen(p)) }, F.icon('crop', 'sm'), 'Check the edges'));
       if (p.blur && p.blur.blurry) badges.append(h('button', { class: 'badge warn', onclick: () => F.startScan({ docId, replace: p.id, mode: 'page' }) }, F.icon('warn', 'sm'), 'Looks blurry · Retake'));
       s.append(wrap, badges);
       img.src = await F.displayURL(p);
@@ -4038,6 +5845,136 @@ const Folio = {};
     return { mount, unmount, shown: () => load() };
   };
 
+  /* ---------------------------------------------------------------- full-detail viewer */
+  // HD page with pinch / double-tap zoom and drag to pan. pages: the document's pages, i: which one.
+  const fullUrls = new Map();
+  F.fullURL = async (p) => {
+    if (!p.ann || !p.ann.length) return F.urlFor('o:' + p.id, p.out);
+    const key = `${p.id}:${p.rev || 0}:${p.annRev || 0}`;
+    if (fullUrls.has(key)) return fullUrls.get(key);
+    const c = await F.renderPage(p);
+    const url = URL.createObjectURL(await F.canvasBlob(c, 'image/jpeg', 0.92));
+    c.width = c.height = 1;
+    for (const [k, u] of fullUrls) if (k.startsWith(p.id + ':')) { URL.revokeObjectURL(u); fullUrls.delete(k); }
+    fullUrls.set(key, url);
+    return url;
+  };
+  F.openZoom = (pages, i) => {
+    const p = pages[i];
+    if (!p || p.status !== 'ready') return;
+    F.nav.push(F.ZoomScreen(pages, i));
+  };
+  F.ZoomScreen = function ZoomScreen(pages, index) {
+    let root, stage, img, label, i = index;
+    let s = 1, tx = 0, ty = 0, base = { w: 1, h: 1, x: 0, y: 0 };
+    const ptrs = new Map();
+    let pinch = null, pan = null, lastTap = 0;
+    function mount() {
+      img = h('img', { class: 'zoom-img', alt: '', draggable: 'false' });
+      stage = h('div', { class: 'zoom-stage' }, img);
+      label = h('div', { class: 'zoom-label num' });
+      root = h('section', { class: 'zoomer', 'aria-label': 'Page in full detail' },
+        stage,
+        h('div', { class: 'zoom-bar' },
+          h('button', { class: 'ibtn', 'aria-label': 'Close', onclick: () => F.nav.back() }, F.icon('close')),
+          label,
+          h('button', { class: 'ibtn', 'aria-label': 'Previous page', onclick: () => show(i - 1) }, F.icon('back')),
+          h('button', { class: 'ibtn flip', 'aria-label': 'Next page', onclick: () => show(i + 1) }, F.icon('back'))));
+      stage.addEventListener('pointerdown', down);
+      stage.addEventListener('pointermove', move);
+      stage.addEventListener('pointerup', up);
+      stage.addEventListener('pointercancel', up);
+      stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, s * (e.deltaY < 0 ? 1.15 : 1 / 1.15)); }, { passive: false });
+      window.addEventListener('resize', layout);
+      show(i);
+      return root;
+    }
+    async function show(k) {
+      if (k < 0 || k >= pages.length) return;
+      i = k;
+      const p = pages[i];
+      label.textContent = `Page ${i + 1} of ${pages.length}` + (p.w ? ` · ${p.w} × ${p.h}` : '');
+      s = 1; tx = 0; ty = 0;
+      img.style.opacity = '0.35';
+      // the view-size image first (instant), then the full-resolution one
+      if (p.view && !(p.ann && p.ann.length)) { img.src = F.urlFor('v:' + p.id, p.view); }
+      const url = await F.fullURL(p);
+      if (i !== k) return;
+      const pre = new Image();
+      pre.onload = () => { if (i === k) { img.src = url; img.style.opacity = '1'; layout(); } };
+      pre.src = url;
+      layout();
+    }
+    function layout() {
+      const p = pages[i];
+      const r = stage.getBoundingClientRect();
+      const aw = p.w || img.naturalWidth || 1, ah = p.h || img.naturalHeight || 1;
+      const k = Math.min(r.width / aw, r.height / ah);
+      base = { w: aw * k, h: ah * k, x: (r.width - aw * k) / 2, y: (r.height - ah * k) / 2 };
+      img.style.width = base.w + 'px'; img.style.height = base.h + 'px';
+      apply();
+    }
+    function maxScale() { const p = pages[i]; return Math.max(2, (p.w || 2000) / base.w * 1.5); }
+    // keep the page on screen: centred while smaller than the screen, edges never pulled inside it
+    function clampPan() {
+      const r = stage.getBoundingClientRect();
+      const w = base.w * s, hh = base.h * s;
+      if (w <= r.width) tx = (r.width - w) / 2 - base.x; else tx = F.clamp(tx, r.width - w - base.x, -base.x);
+      if (hh <= r.height) ty = (r.height - hh) / 2 - base.y; else ty = F.clamp(ty, r.height - hh - base.y, -base.y);
+    }
+    function apply() {
+      clampPan();
+      img.style.transform = `translate(${base.x + tx}px, ${base.y + ty}px) scale(${s})`;
+    }
+    function zoomAt(cx, cy, ns) {
+      const r = stage.getBoundingClientRect();
+      ns = F.clamp(ns, 1, maxScale());
+      const px = cx - r.left - base.x - tx, py = cy - r.top - base.y - ty; // point on the image (scaled)
+      tx -= px * (ns / s - 1); ty -= py * (ns / s - 1);
+      s = ns;
+      apply();
+    }
+    function down(e) {
+      stage.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 2) {
+        const [a, b] = [...ptrs.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+        pan = null;
+      } else if (ptrs.size === 1) {
+        pan = { x: e.clientX, y: e.clientY, tx, ty, moved: false, t: Date.now() };
+      }
+    }
+    function move(e) {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && ptrs.size >= 2) {
+        const [a, b] = [...ptrs.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, pinch.s * (d / Math.max(1, pinch.d)));
+      } else if (pan) {
+        const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+        if (Math.hypot(dx, dy) > 6) pan.moved = true;
+        if (s > 1.01) { tx = pan.tx + dx; ty = pan.ty + dy; apply(); }
+      }
+    }
+    function up(e) {
+      ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch = null;
+      if (pan && ptrs.size === 0) {
+        const dx = e.clientX - pan.x;
+        if (!pan.moved && Date.now() - pan.t < 300) {
+          const now = Date.now();
+          if (now - lastTap < 320) { zoomAt(e.clientX, e.clientY, s > 1.2 ? 1 : 2.6); lastTap = 0; }
+          else lastTap = now;
+        } else if (s <= 1.01 && Math.abs(dx) > 60) show(i + (dx < 0 ? 1 : -1));
+        pan = null;
+      }
+    }
+    function unmount() { window.removeEventListener('resize', layout); }
+    return { mount, unmount };
+  };
+
   /* ---------------------------------------------------------------- look sheet */
   F.openLook = async (doc, page) => {
     const looks = [['auto', 'Auto'], ['grey', 'Grey'], ['bw', 'B&W'], ['original', 'Photo']];
@@ -4171,24 +6108,73 @@ const Folio = {};
   }
 
   /* ================================================================ crop */
+  // Page outline editor. The outline has four corners and sides that may curve (book pages, curled
+  // sheets); a curved side keeps its shape (relative to its corners) while the corners are moved.
   F.CropScreen = function CropScreen(page) {
-    let root, host, canvas, ctx, bmp = null, src = null, quad = (page.quad || [[0, 0], [1, 0], [1, 1], [0, 1]]).map((p) => p.slice());
-    let fit = { x: 0, y: 0, w: 1, h: 1 }, dpr = 1, drag = null, applyBtn, ro = null;
+    let root, host, canvas, ctx, bmp = null, src = null;
+    let fit = { x: 0, y: 0, w: 1, h: 1 }, dpr = 1, drag = null, applyBtn, straightBtn, ro = null;
+    let W = 1, H = 1; // photo size in pixels (editing happens in photo pixels)
+    let corners = [], shapes = [null, null, null, null]; // shapes[i]: [{t, d}] offsets along side i, or null
     const PAD = 28;
+    const fullOutline = () => ({ corners: [[0, 0], [1, 0], [1, 1], [0, 1]], sides: [null, null, null, null] });
+
+    // side i runs from corner i to corner i+1
+    const chord = (i) => { const a = corners[i], b = corners[(i + 1) % 4]; const dx = b[0] - a[0], dy = b[1] - a[1]; const L = Math.hypot(dx, dy) || 1; return { a, b, dx, dy, L, nx: -dy / L, ny: dx / L }; };
+    function sidePts(i, n) {
+      const c = chord(i), sh = shapes[i];
+      const out = [];
+      const N = n || (sh ? sh.length - 1 : 1);
+      for (let k = 0; k <= N; k++) {
+        const t = k / N;
+        let d = 0;
+        if (sh) {
+          // offsets are tabulated on t; interpolate
+          let j = 1;
+          while (j < sh.length - 1 && sh[j].t < t) j++;
+          const p = sh[j - 1], q = sh[j], f = q.t > p.t ? Math.min(1, Math.max(0, (t - p.t) / (q.t - p.t))) : 0;
+          d = p.d + (q.d - p.d) * f;
+        }
+        out.push([c.a[0] + c.dx * t + c.nx * d * c.L, c.a[1] + c.dy * t + c.ny * d * c.L]);
+      }
+      return out;
+    }
+    function setOutline(ol) {
+      corners = ol.corners.map(([x, y]) => [x * W, y * H]);
+      shapes = [0, 1, 2, 3].map((i) => {
+        const pts = ol.sides && ol.sides[i];
+        if (!pts || pts.length < 3) return null;
+        const c = chord(i);
+        return pts.map(([x, y]) => {
+          const px = x * W - c.a[0], py = y * H - c.a[1];
+          return { t: (px * c.dx + py * c.dy) / (c.L * c.L), d: (px * c.nx + py * c.ny) / c.L };
+        }).sort((p, q) => p.t - q.t);
+      });
+      updateStraightBtn();
+    }
+    function getOutline() {
+      const nc = corners.map(([x, y]) => [F.clamp(x / W, -0.02, 1.02), F.clamp(y / H, -0.02, 1.02)]);
+      const sides = shapes.map((sh, i) => (sh ? sidePts(i, 32).map(([x, y]) => [F.clamp(x / W, -0.02, 1.02), F.clamp(y / H, -0.02, 1.02)]) : null));
+      return { corners: nc, sides };
+    }
+    const curved = () => shapes.some(Boolean);
+    function updateStraightBtn() { if (straightBtn) straightBtn.hidden = !curved(); }
+
     function mount() {
       canvas = h('canvas', { 'aria-label': 'Photo with the page outline. Drag the corners to fit the page edges.' });
       host = h('div', { class: 'canvas-host' }, canvas);
       applyBtn = h('button', { class: 'ibtn', 'aria-label': 'Apply', onclick: apply }, F.icon('check'));
+      straightBtn = h('button', { class: 'btn', hidden: true, onclick: () => { shapes = [null, null, null, null]; updateStraightBtn(); draw(); F.toast('Edges straightened'); } }, F.icon('crop', 'sm'), 'Straight edges');
       root = h('section', { class: 'editor' },
         h('div', { class: 'bar' },
           h('button', { class: 'ibtn', 'aria-label': 'Cancel', onclick: () => F.nav.back() }, F.icon('close')),
-          h('h1', null, 'Adjust corners'),
+          h('h1', null, 'Adjust edges'),
           applyBtn),
         host,
-        h('div', { class: 'hint-line' }, 'Drag a corner or an edge to match the page.'),
+        h('div', { class: 'hint-line' }, 'Drag a corner or an edge to match the page. Curved edges keep their curve.'),
         h('div', { class: 'crop-actions' },
           h('button', { class: 'btn', onclick: redetect }, F.icon('look', 'sm'), 'Detect again'),
-          h('button', { class: 'btn', onclick: () => { quad = [[0, 0], [1, 0], [1, 1], [0, 1]]; draw(); } }, F.icon('crop', 'sm'), 'Whole photo'),
+          h('button', { class: 'btn', onclick: () => { setOutline(fullOutline()); draw(); } }, F.icon('crop', 'sm'), 'Whole photo'),
+          straightBtn,
           h('button', { class: 'btn primary', onclick: apply }, F.icon('check', 'sm'), 'Apply')));
       ctx = canvas.getContext('2d');
       canvas.addEventListener('pointerdown', down);
@@ -4202,6 +6188,8 @@ const Folio = {};
       src = await F.db.source(page.srcId);
       if (!src) { F.toast('The original photo is missing'); F.nav.back(); return; }
       bmp = await createImageBitmap(src.blob);
+      W = bmp.width; H = bmp.height;
+      setOutline(page.outline || { corners: page.quad || fullOutline().corners, sides: [null, null, null, null] });
       ro = new ResizeObserver(layout);
       ro.observe(host);
       layout();
@@ -4212,50 +6200,55 @@ const Folio = {};
       dpr = Math.min(3, window.devicePixelRatio || 1);
       canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
       canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
-      const k = Math.min((r.width - PAD * 2) / bmp.width, (r.height - PAD * 2) / bmp.height);
-      fit = { w: bmp.width * k, h: bmp.height * k, x: (r.width - bmp.width * k) / 2, y: (r.height - bmp.height * k) / 2 };
+      const k = Math.min((r.width - PAD * 2) / W, (r.height - PAD * 2) / H);
+      fit = { w: W * k, h: H * k, x: (r.width - W * k) / 2, y: (r.height - H * k) / 2, k };
       draw();
     }
-    const toScreen = (p) => [fit.x + p[0] * fit.w, fit.y + p[1] * fit.h];
-    const toNorm = (x, y) => [(x - fit.x) / fit.w, (y - fit.y) / fit.h];
+    const toScreen = (p) => [fit.x + p[0] * fit.k, fit.y + p[1] * fit.k];
+    const toPhoto = (x, y) => [(x - fit.x) / fit.k, (y - fit.y) / fit.k];
+    function outlinePath() {
+      const pts = [];
+      for (let i = 0; i < 4; i++) { const sp = sidePts(i, shapes[i] ? 48 : 1); pts.push(...sp.slice(0, -1)); }
+      return pts.map(toScreen);
+    }
     function draw() {
       if (!bmp) return;
-      const W = canvas.width / dpr, H = canvas.height / dpr;
+      const Wc = canvas.width / dpr, Hc = canvas.height / dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, W, H);
+      ctx.clearRect(0, 0, Wc, Hc);
       ctx.drawImage(bmp, fit.x, fit.y, fit.w, fit.h);
-      const pts = quad.map(toScreen);
+      const path = outlinePath();
       ctx.save();
       ctx.beginPath();
-      ctx.rect(0, 0, W, H);
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < 4; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.rect(0, 0, Wc, Hc);
+      ctx.moveTo(path[0][0], path[0][1]);
+      for (let i = 1; i < path.length; i++) ctx.lineTo(path[i][0], path[i][1]);
       ctx.closePath();
       ctx.fillStyle = 'rgba(5,8,14,0.55)';
       ctx.fill('evenodd');
       ctx.restore();
-      const ok = convex(quad);
+      const ok = convex(corners);
       applyBtn.disabled = !ok;
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = ok ? '#ffd23f' : '#ff5a52';
       ctx.beginPath();
-      pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      path.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
       ctx.closePath();
       ctx.stroke();
-      // edge handles
+      // edge handles at the middle of each side, along its direction there
       for (let i = 0; i < 4; i++) {
-        const a = pts[i], b = pts[(i + 1) % 4];
-        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        const sp = sidePts(i, 32).map(toScreen);
+        const m = sp[16], a = sp[14], b = sp[18];
         const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
         ctx.save();
-        ctx.translate(mx, my); ctx.rotate(ang);
+        ctx.translate(m[0], m[1]); ctx.rotate(ang);
         ctx.fillStyle = '#fff';
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(-14, -4, 28, 8, 4); else ctx.rect(-14, -4, 28, 8);
         ctx.fill();
         ctx.restore();
       }
-      for (const p of pts) {
+      for (const p of corners.map(toScreen)) {
         ctx.beginPath(); ctx.arc(p[0], p[1], 12, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
         ctx.lineWidth = 3; ctx.strokeStyle = ok ? '#ffd23f' : '#ff5a52'; ctx.stroke();
@@ -4263,18 +6256,24 @@ const Folio = {};
       if (drag) magnifier(drag.focus);
     }
     function magnifier(p) {
-      const W = canvas.width / dpr;
+      const Wc = canvas.width / dpr;
       const R = 62, Z = 2.6;
       const [sx, sy] = p;
-      const cx = sx < W / 2 ? W - R - 14 : R + 14, cy = R + 14;
+      const cx = sx < Wc / 2 ? Wc - R - 14 : R + 14, cy = R + 14;
       ctx.save();
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.closePath();
       ctx.fillStyle = '#000'; ctx.fill();
       ctx.clip();
-      const n = toNorm(sx, sy);
-      const srcX = n[0] * bmp.width, srcY = n[1] * bmp.height;
-      const span = (R * 2) / (Z * (fit.w / bmp.width));
-      ctx.drawImage(bmp, srcX - span / 2, srcY - span / 2, span, span, cx - R, cy - R, R * 2, R * 2);
+      const n = toPhoto(sx, sy);
+      const span = (R * 2) / (Z * fit.k);
+      ctx.drawImage(bmp, n[0] - span / 2, n[1] - span / 2, span, span, cx - R, cy - R, R * 2, R * 2);
+      // the outline inside the loupe
+      const zk = (R * 2) / span;
+      const path = outlinePath().map((q) => toPhoto(q[0], q[1]));
+      ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,210,63,0.9)';
+      ctx.beginPath();
+      path.forEach((q, i) => { const x = cx + (q[0] - n[0]) * zk, y = cy + (q[1] - n[1]) * zk; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.closePath(); ctx.stroke();
       ctx.restore();
       ctx.lineWidth = 3; ctx.strokeStyle = '#fff';
       ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
@@ -4282,13 +6281,12 @@ const Folio = {};
       ctx.beginPath(); ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy); ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10); ctx.stroke();
     }
     function hit(x, y) {
-      const pts = quad.map(toScreen);
       let best = null, bd = 34;
-      pts.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < bd) { bd = d; best = { kind: 'corner', i }; } });
+      corners.map(toScreen).forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < bd) { bd = d; best = { kind: 'corner', i }; } });
       if (best) return best;
       for (let i = 0; i < 4; i++) {
-        const a = pts[i], b = pts[(i + 1) % 4];
-        const d = Math.hypot((a[0] + b[0]) / 2 - x, (a[1] + b[1]) / 2 - y);
+        const m = toScreen(sidePts(i, 32)[16]);
+        const d = Math.hypot(m[0] - x, m[1] - y);
         if (d < bd) { bd = d; best = { kind: 'edge', i }; }
       }
       return best;
@@ -4299,23 +6297,23 @@ const Folio = {};
       const t = hit(x, y);
       if (!t) return;
       canvas.setPointerCapture(e.pointerId);
-      drag = Object.assign(t, { sx: x, sy: y, start: quad.map((p) => p.slice()), focus: [x, y] });
+      drag = Object.assign(t, { sx: x, sy: y, start: corners.map((p) => p.slice()), focus: [x, y] });
       draw();
     }
     function move(e) {
       if (!drag) return;
       const r = canvas.getBoundingClientRect();
       const x = e.clientX - r.left, y = e.clientY - r.top;
-      const dx = (x - drag.sx) / fit.w, dy = (y - drag.sy) / fit.h;
-      const lim = (v) => F.clamp(v, -0.02, 1.02);
+      const dx = (x - drag.sx) / fit.k, dy = (y - drag.sy) / fit.k;
+      const lim = (p) => [F.clamp(p[0], -0.02 * W, 1.02 * W), F.clamp(p[1], -0.02 * H, 1.02 * H)];
       if (drag.kind === 'corner') {
-        const s = drag.start[drag.i];
-        quad[drag.i] = [lim(s[0] + dx), lim(s[1] + dy)];
-        drag.focus = toScreen(quad[drag.i]);
+        const s0 = drag.start[drag.i];
+        corners[drag.i] = lim([s0[0] + dx, s0[1] + dy]);
+        drag.focus = toScreen(corners[drag.i]);
       } else {
         const i = drag.i, j = (i + 1) % 4;
-        quad[i] = [lim(drag.start[i][0] + dx), lim(drag.start[i][1] + dy)];
-        quad[j] = [lim(drag.start[j][0] + dx), lim(drag.start[j][1] + dy)];
+        corners[i] = lim([drag.start[i][0] + dx, drag.start[i][1] + dy]);
+        corners[j] = lim([drag.start[j][0] + dx, drag.start[j][1] + dy]);
         drag.focus = [x, y];
       }
       draw();
@@ -4325,12 +6323,16 @@ const Folio = {};
       F.toast('Looking for the page…', null, 1500);
       const det = await FolioProcessor.detect(src.blob, { book: !!page.book });
       if (!det.found) { F.toast('No page edges found. Drag the corners instead.'); return; }
-      quad = page.book && det.halves ? det.halves[page.book.side === 'left' ? 0 : 1] : det.quad;
+      const idx = page.book && det.outlines.length > 1 ? (page.book.side === 'left' ? 0 : 1) : 0;
+      setOutline(det.outlines[idx]);
       draw();
     }
     function apply() {
-      if (!convex(quad)) return;
-      page.quad = quad.map((p) => [F.clamp(p[0], 0, 1), F.clamp(p[1], 0, 1)]);
+      if (!convex(corners)) return;
+      const ol = getOutline();
+      page.outline = Object.assign({}, page.outline || {}, ol, { kind: page.book ? 'book' : 'sheet', curved: curved(), quality: 1 });
+      if (page.book) page.outline.book = { side: page.book.side };
+      page.quad = ol.corners;
       page.found = true;
       page.ocr = null;
       F.reprocess(page);
@@ -4766,7 +6768,23 @@ const Folio = {};
     let res = null;
     try {
       if (!FolioOCR.supported()) throw new Error('This browser cannot run text recognition');
-      const r = await FolioOCR.recognize(page.out, page.w, page.h, onProgress);
+      // the reader works best around 250 dpi: HD pages are scaled down for it (marks left out)
+      const long = Math.max(page.w, page.h);
+      let src = page.out, w = page.w, hgt = page.h;
+      if (long > 2800) {
+        const bmp = await createImageBitmap(page.out);
+        const k = 2600 / long;
+        const c = document.createElement('canvas');
+        c.width = Math.round(page.w * k); c.height = Math.round(page.h * k);
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(bmp, 0, 0, c.width, c.height);
+        bmp.close && bmp.close();
+        src = await F.canvasBlob(c, 'image/jpeg', 0.92);
+        w = c.width; hgt = c.height;
+        c.width = c.height = 1;
+      }
+      const r = await FolioOCR.recognize(src, w, hgt, onProgress);
       res = { text: (r.text || '').trim(), words: r.words, conf: r.conf, via: 'device' };
     } catch (e) {
       const sample = F.ENV.artifact ? await F.cap('sample') : null;
@@ -4904,19 +6922,31 @@ const Folio = {};
   };
 
   /* ================================================================ building files */
-  const QUAL = { small: { long: 1300, q: 0.68, f: 0.24 }, standard: { long: 1800, q: 0.8, f: 0.48 }, high: { long: 2400, q: 0.88, f: 0.85 } };
+  // HD: the pages exactly as scanned (full resolution, no re-compression); smaller sizes for sharing
+  const QUAL = {
+    hd: { long: 0, q: 0.92, f: 1 },
+    standard: { long: 2200, q: 0.84, f: 0.62 }, // f: file size compared with JPEG quality 0.92 at the same size
+    small: { long: 1400, q: 0.72, f: 0.42 },
+  };
+  QUAL.high = QUAL.hd; // older setting name
+  const qualOf = (k) => QUAL[k] || QUAL.hd;
+  // dots per inch the PDF should assume for a page image (page sizes other than "fit" scale it anyway)
+  const dpiOf = (w, h) => Math.max(150, Math.min(400, Math.max(w, h) / 11));
   F.estimateSize = (pages, quality) => {
-    const Q = QUAL[quality] || QUAL.standard;
+    const Q = qualOf(quality);
     let n = 1500;
     for (const p of pages) {
       const base = p.out ? p.out.size : 400000;
-      n += p.filter === 'bw' && FolioPDF.canBilevel ? base * 0.12 * (Q.long / 2400) : base * Q.f;
+      const long = Math.max(p.w || 2400, p.h || 2400);
+      const scale = Q.long ? Math.min(1, Q.long / long) : 1;
+      n += p.filter === 'bw' && FolioPDF.canBilevel ? base * 0.16 * scale * scale : base * scale * scale * Q.f;
     }
     return n;
   };
+  const hasMarks = (p) => !!(p.ann && p.ann.length);
   const colourMarks = (p) => (p.ann || []).some((a) => a.t === 'hl' || (a.t === 'pen' && a.c !== '#141a2b') || (a.t === 'text' && a.c !== '#141a2b'));
   F.makePDF = async (doc, pages, o, progress) => {
-    const Q = QUAL[o.quality] || QUAL.standard;
+    const Q = qualOf(o.quality);
     const out = [];
     for (let i = 0; i < pages.length; i++) {
       const p = pages[i];
@@ -4926,29 +6956,44 @@ const Folio = {};
           await F.ocrPage(doc, p, (v, stage) => progress && progress((i + v * 0.8) / pages.length, `Reading text on page ${i + 1} of ${pages.length}`));
         } catch (e) { o.searchable = false; F.toast('Text recognition is not available here, so the PDF is not searchable'); }
       }
-      const c = await F.renderPage(p, Q.long);
-      let image;
-      if (p.filter === 'bw' && FolioPDF.canBilevel && !colourMarks(p)) {
-        const id = c.getContext('2d').getImageData(0, 0, c.width, c.height);
-        image = await FolioPDF.bilevel({ width: c.width, height: c.height, data: id.data }, 150);
+      const bw = p.filter === 'bw' && FolioPDF.canBilevel && !colourMarks(p);
+      let image, iw, ih;
+      if (!Q.long && !bw && !hasMarks(p) && p.out && p.out.type === 'image/jpeg') {
+        // HD: the scanned page goes in as it is (no second compression)
+        image = { kind: 'jpeg', bytes: new Uint8Array(await p.out.arrayBuffer()), w: p.w, h: p.h };
+        iw = p.w; ih = p.h;
       } else {
-        const b = await F.canvasBlob(c, 'image/jpeg', Q.q);
-        image = { kind: 'jpeg', bytes: new Uint8Array(await b.arrayBuffer()), w: c.width, h: c.height };
+        const c = await F.renderPage(p, Q.long || undefined);
+        if (bw) {
+          const id = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+          image = await FolioPDF.bilevel({ width: c.width, height: c.height, data: id.data }, 150);
+        } else {
+          const b = await F.canvasBlob(c, 'image/jpeg', Q.q);
+          image = { kind: 'jpeg', bytes: new Uint8Array(await b.arrayBuffer()), w: c.width, h: c.height };
+        }
+        iw = c.width; ih = c.height;
+        c.width = c.height = 1;
       }
-      out.push({ image, size: FolioPDF.pageSize(o.pageSize, c.width, c.height, 200), words: o.searchable && p.ocr ? p.ocr.words : null });
+      out.push({ image, size: FolioPDF.pageSize(o.pageSize, iw, ih, dpiOf(iw, ih)), words: o.searchable && p.ocr ? p.ocr.words : null });
     }
     progress && progress(1, 'Finishing');
     const bytes = FolioPDF.build(out, { title: doc.name, subject: doc.subject || '', keywords: [doc.cls, doc.subject, 'Folio scan'].filter(Boolean).join(', ') });
     return new File([bytes], F.fileName(doc, 'pdf'), { type: 'application/pdf' });
   };
   F.makeImages = async (doc, pages, o, progress) => {
-    const Q = QUAL[o.quality] || QUAL.standard;
+    const Q = qualOf(o.quality);
     const files = [];
     const base = F.fileName(doc, 'x').replace(/\.x$/, '');
     for (let i = 0; i < pages.length; i++) {
       progress && progress(i / pages.length, `Preparing page ${i + 1} of ${pages.length}`);
-      const c = await F.renderPage(pages[i], Q.long);
-      const b = await F.canvasBlob(c, 'image/jpeg', Q.q);
+      const p = pages[i];
+      let b;
+      if (!Q.long && !hasMarks(p) && p.out) b = p.out;
+      else {
+        const c = await F.renderPage(p, Q.long || undefined);
+        b = await F.canvasBlob(c, 'image/jpeg', Q.q);
+        c.width = c.height = 1;
+      }
       files.push(new File([b], `${base} - page ${String(i + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' }));
     }
     return files;
@@ -5074,7 +7119,7 @@ const Folio = {};
     if (!doc) return;
     let pages = await F.db.pagesOf(doc);
     const st = F.settings;
-    const o = { fmt: 'pdf', pageSize: st.pageSize || 'a4', quality: st.quality || 'standard', searchable: !!st.searchable };
+    const o = { fmt: 'pdf', pageSize: st.pageSize || 'a4', quality: QUAL[st.quality] ? (st.quality === 'high' ? 'hd' : st.quality) : 'hd', searchable: !!st.searchable };
     let file = null, files = null;
     const est = h('span', { class: 'num' });
     const resultBox = h('div', { class: 'group' });
@@ -5091,7 +7136,7 @@ const Folio = {};
       return el;
     };
     const sizeSeg = seg([['a4', 'A4'], ['letter', 'Letter'], ['fit', 'Fit to scan']], 'pageSize', () => { st.pageSize = o.pageSize; F.saveSettings(); });
-    const qualSeg = seg([['small', 'Small', 'email'], ['standard', 'Standard'], ['high', 'High', 'print']], 'quality', () => { st.quality = o.quality; F.saveSettings(); updateEst(); });
+    const qualSeg = seg([['hd', 'HD', 'full detail'], ['standard', 'Standard'], ['small', 'Small', 'email']], 'quality', () => { st.quality = o.quality; F.saveSettings(); updateEst(); });
     const fmtSeg = seg([['pdf', 'PDF'], ['jpg', 'Images (JPG)']], 'fmt', () => { pdfOnly.forEach((e) => { e.hidden = o.fmt !== 'pdf'; }); updateLabel(); });
     const searchToggle = h('input', { type: 'checkbox', class: 'toggle', checked: o.searchable, 'aria-label': 'Searchable text' });
     searchToggle.addEventListener('change', () => { o.searchable = searchToggle.checked; st.searchable = o.searchable; F.saveSettings(); invalidate(); });
@@ -5262,18 +7307,22 @@ const Folio = {};
     F.sheet({
       title: 'Settings',
       body: () => [
+        h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Scan quality'),
+          seg('scanQuality', [['hd', 'HD (recommended)'], ['standard', 'Standard']]),
+          h('div', { style: { fontSize: '13px', color: 'var(--ink-3)' } }, 'HD keeps all the detail your camera captures, about 300 dpi on an A4 page. Standard uses less space on the phone.')),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Scanning'),
-          sw('autoCapture', 'Auto-capture', 'Snaps when the page is steady, again after you turn the page'),
-          sw('fingers', 'Remove fingers and clean edges', 'For new scans. You can change it for any page.'),
-          sw('snap', 'Straighten to paper sizes', 'Makes pages exactly A4 or Letter when they are close'),
-          sw('maxQuality', 'Best photo quality', 'Uses the full camera photo. Turn off if capturing is slow.'),
+          sw('autoCapture', 'Auto-capture', 'Snaps when the page is steady and in focus, again after you turn the page'),
+          sw('fingers', 'Remove fingers and clean edges', 'Erases thumbs and desk showing at the edges of new scans'),
+          sw('flatten', 'Flatten curved pages', 'Straightens the curve of book pages and curled sheets'),
+          sw('snap', 'Straighten to paper sizes', 'Makes flat pages exactly A4 or Letter when they are close'),
+          sw('maxQuality', 'Full-resolution photos', 'Takes each photo with the camera’s full resolution. Turn off only if capturing is slow.'),
           sw('sound', 'Shutter sound'),
           sw('haptics', 'Vibrate on capture')),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Classes'), listEditor('classes', 'Add, e.g. 7B')),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Subjects'), listEditor('subjects', 'Add a subject')),
         sw('dateInName', 'Add the date to file names', 'e.g. “7B Maths – Fractions – 23 Oct 2026”'),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'PDF page size'), seg('pageSize', [['a4', 'A4'], ['letter', 'Letter'], ['fit', 'Fit to scan']])),
-        h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'PDF quality'), seg('quality', [['small', 'Small'], ['standard', 'Standard'], ['high', 'High']])),
+        h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'PDF quality'), seg('quality', [['hd', 'HD'], ['standard', 'Standard'], ['small', 'Small']])),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Appearance'), seg('theme', [['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']], F.applyTheme)),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Text recognition'), ocrStatus),
         h('div', { class: 'group' }, h('span', { class: 'lbl' }, 'Storage'), storage,
@@ -5325,6 +7374,7 @@ const Folio = {};
   try { await F.loadSettings(); } catch (e) { /* defaults */ }
   FolioProcessor.start();
   F.nav.push(F.HomeScreen(), { instant: true });
+  if (F.whatsNew) setTimeout(() => F.toast(F.whatsNew, null, 7000), 900);
 
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); F.installPrompt = e; F.emit('install'); });
   window.addEventListener('appinstalled', () => { F.installPrompt = null; F.emit('install'); F.toast('Folio is installed. Open it from your home screen.'); });

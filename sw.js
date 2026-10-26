@@ -1,5 +1,5 @@
 /* Folio service worker: works offline, caches the text reader on first use, receives shared photos. */
-const VERSION = '1.0.1-20261023';
+const VERSION = '2.0.0-20261026.3';
 const SHELL = 'folio-shell-' + VERSION;
 const OCR = 'folio-ocr-1';
 const FONTS = 'folio-fonts-1';

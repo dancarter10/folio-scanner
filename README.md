@@ -4,9 +4,11 @@ A phone scanner that runs in the browser and installs like an app. It turns phot
 
 **Open it:** https://dancarter10.github.io/folio-scanner/
 
+- HD scans: full-resolution photos from the phone camera, kept at full detail (about 300 dpi on an A4 page)
 - Live camera with a page outline and auto-capture (it snaps again after you turn the page)
-- Book mode splits a two-page spread into separate pages
-- Straightens pages to A4, lifts shadows and removes fingers at the page edges
+- Edge-to-edge cropping: finds each page's exact edges, including curved and bowed pages, and flattens them
+- Book mode splits a two-page spread at the spine and flattens the curve of each page
+- Lifts shadows, removes fingers at the page edges and cleans away bits of desk at folded or curled corners
 - Looks: Auto, Grey, Black & white, Photo
 - Text recognition on the phone (searchable PDFs, copy text)
 - Mark-up: pen, highlighter, text, signature, white-out and black-out boxes
